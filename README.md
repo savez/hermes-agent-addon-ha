@@ -9,8 +9,6 @@ dashboard nativa come pannello nella sidebar (Ingress) e una CLI via SSH.
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-add--on%20locale-41BDF5?logo=home-assistant&logoColor=white)](https://www.home-assistant.io/addons/)
 [![Architetture](https://img.shields.io/badge/arch-aarch64%20%7C%20amd64-555)](hermes_agent/build.yaml)
 [![Ingress](https://img.shields.io/badge/Ingress-s%C3%AC-success)](hermes_agent/config.yaml)
-[![Utente](https://img.shields.io/badge/utente-non%20privilegiato-success)](CLAUDE.md)
-[![Build](https://img.shields.io/badge/build-locale%2C%20nessuna%20immagine%20precompilata-informational)](hermes_agent/Dockerfile)
 [![Upstream](https://img.shields.io/badge/upstream-NousResearch%2Fhermes--agent-blueviolet?logo=github)](https://github.com/NousResearch/hermes-agent)
 [![Licenza](https://img.shields.io/badge/licenza-MIT-green)](LICENSE)
 
