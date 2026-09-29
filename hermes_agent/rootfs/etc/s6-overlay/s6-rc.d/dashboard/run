@@ -1,0 +1,23 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Dashboard nativa di Hermes, come utente non privilegiato, solo su loopback.
+# nginx (porta Ingress 8099) è l'unico punto d'ingresso.
+# Se il processo esce, s6 lo riavvia automaticamente.
+#
+# Nessuna password propria (deciso il 2026-09-25 — CLAUDE.md regola #7):
+# senza HERMES_DASHBOARD_BASIC_AUTH_* né un dashboard.public_url non-loopback,
+# la dashboard non registra un provider di autenticazione e non richiede
+# login — l'unica barriera resta quella di Home Assistant stesso, dietro il
+# pannello Ingress.
+
+export HOME=/data/hermes/home
+export HERMES_HOME=/data/hermes
+
+# Il token per HA arriva ad agent e dashboard da /data/hermes/.env
+# (HERMES_HA_TOKEN): quello del Supervisor non serve nel loro ambiente.
+unset SUPERVISOR_TOKEN
+
+bashio::log.info "Avvio Hermes Dashboard su 127.0.0.1:8788"
+cd /opt/hermes-agent || exit 1
+exec s6-setuidgid hermes /opt/hermes-agent/.venv/bin/hermes dashboard \
+    --host 127.0.0.1 --port 8788 --no-open

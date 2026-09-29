@@ -1,0 +1,14 @@
+#!/bin/bash
+# Wrapper della CLI di Hermes: stesso HERMES_HOME e stesso utente della Web UI.
+export HERMES_HOME="${HERMES_HOME:-/data/hermes}"
+export HERMES_WRITE_SAFE_ROOT="${HERMES_WRITE_SAFE_ROOT:-/data/hermes}"
+export HERMES_DISABLE_LAZY_INSTALLS=1
+
+# Da root (es. docker exec) scende a hermes, altrimenti i file creati in
+# /data/hermes diventerebbero di root e la Web UI non potrebbe scriverli.
+if [ "$(id -u)" = "0" ]; then
+    export HOME=/data/hermes/home
+    exec /command/s6-setuidgid hermes "$0" "$@"
+fi
+
+exec /opt/hermes-agent/.venv/bin/hermes "$@"

@@ -1,0 +1,5 @@
+# Ogni modifica richiede la revisione del manutentore.
+# Insieme alla protezione del branch main (revisione obbligatoria da
+# code owner), questo fa sì che nessuna PR possa essere mergiata senza
+# l'approvazione di @savez.
+* @savez

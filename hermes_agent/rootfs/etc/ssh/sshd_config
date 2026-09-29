@@ -1,0 +1,30 @@
+# sshd per la CLI di Hermes. Raggiungibile dalla rete interna di HA
+# (tunnel dall'App "Advanced SSH & Web Terminal") o, se pubblicata nella
+# sezione Rete dell'App, dalla LAN.
+Port 2222
+HostKey /data/ssh/ssh_host_ed25519_key
+
+AllowUsers hermes
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+UsePAM no
+# File di root scritto dall'App dalle opzioni: l'utente hermes non può
+# aggiungersi chiavi da solo.
+AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+PermitUserEnvironment no
+
+# Unico inoltro consentito: la Web UI sul loopback (tools/hermes-ssh --webui).
+AllowTcpForwarding local
+PermitOpen 127.0.0.1:8788
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+
+MaxAuthTries 3
+LoginGraceTime 30
+PrintMotd no
+LogLevel INFO

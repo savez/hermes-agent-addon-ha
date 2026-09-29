@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Collegamento alla CLI di Hermes passando per l'App "Advanced SSH & Web Terminal".
+#   hermes-ssh            shell come utente hermes
+#   hermes-ssh chat       esegue `hermes chat` (qualsiasi sottocomando)
+#   hermes-ssh --webui    Web UI su http://localhost:8788 senza passare da HA
+# Variabili: HERMES_JUMP (alias ~/.ssh/config dell'App SSH, default "ha").
+set -euo pipefail
+JUMP="${HERMES_JUMP:-ha}"
+addr="$(ssh "$JUMP" cat /share/hermes-agent/address 2>/dev/null | tr -d '[:space:]')"
+if [[ -z "$addr" ]]; then
+    echo "Indirizzo non trovato in /share/hermes-agent/address: l'App Hermes è avviata?" >&2
+    exit 1
+fi
+# HostKeyAlias: known_hosts stabile anche se l'IP interno cambia.
+t=(-J "$JUMP" -p 2222 -o HostKeyAlias=hermes-agent "hermes@$addr")
+case "${1:-}" in
+    --webui) exec ssh -N -L "${HERMES_WEBUI_LOCAL_PORT:-8788}:127.0.0.1:8788" "${t[@]}" ;;
+    "")      exec ssh -t "${t[@]}" ;;
+    *)       exec ssh -t "${t[@]}" "hermes $(printf '%q ' "$@")" ;;
+esac

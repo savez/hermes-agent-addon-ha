@@ -1,0 +1,10 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# SSH per la CLI, solo con chiave, solo per l'utente `hermes`.
+if ! bashio::config.has_value 'ssh_authorized_keys'; then
+    bashio::log.info "Nessuna chiave in 'ssh_authorized_keys': SSH per la CLI disattivato"
+    exec sleep infinity
+fi
+mkdir -p /run/sshd
+chmod 0755 /run/sshd
+exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config

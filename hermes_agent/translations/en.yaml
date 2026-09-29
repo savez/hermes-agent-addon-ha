@@ -1,0 +1,22 @@
+configuration:
+  ha_access:
+    name: Home Assistant access
+    description: >-
+      mcp (default): the agent only sees entities exposed to the MCP
+      Server/Assist integration. full: full REST access to Core (every
+      entity and service) — uses the Supervisor's token with full
+      permissions. none: no access to Home Assistant at all.
+  allow_shell_tools:
+    name: Allow shell/file tools
+    description: >-
+      When off (default), the agent cannot run commands or read files
+      inside the container, so it cannot read the locally stored HA
+      token. When on, the agent has a shell and filesystem access inside
+      the container: only enable it if you really need to.
+  ssh_authorized_keys:
+    name: Authorized SSH keys
+    description: >-
+      Public SSH keys for the CLI user on port 2222. Empty by default:
+      SSH access to the CLI stays disabled until you add at least one key.
+network:
+  2222/tcp: SSH for the Hermes CLI (leave empty to only use the tunnel through the SSH add-on)

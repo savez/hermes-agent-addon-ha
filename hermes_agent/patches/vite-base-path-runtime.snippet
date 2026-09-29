@@ -1,0 +1,20 @@
+  // [hermes-ha-app] Fix del path base runtime per i chunk lazy-loaded sotto
+  // Ingress — vedi CLAUDE.md e CHANGELOG. Applicato con `sed` dal Dockerfile,
+  // NON committato: `hermes update` fa autostash di ogni modifica non
+  // committata prima del `git pull` e la riapplica dopo (comportamento
+  // nativo di hermes-agent, vedi hermes_cli/update_cmd_stash.py), quindi
+  // questa patch sopravvive agli aggiornamenti dalla dashboard senza
+  // bisogno di un rebuild Docker completo.
+  experimental: {
+    renderBuiltUrl(filename: string, { hostType }: { hostType: "js" | "css" | "html" }) {
+      // html/css: la stringa assoluta "/assets/..." resta com'è — è quella
+      // che _serve_index()/serve_css() di hermes-agent riscrivono già da
+      // soli leggendo X-Forwarded-Prefix per ogni richiesta. Qui serve solo
+      // per i riferimenti JS (l'elenco dei chunk/CSS da precaricare per una
+      // pagina lazy), che Vite altrimenti fissa come "/assets/..." una
+      // volta per tutte in fase di build, ignorando qualunque prefisso di
+      // Ingress al momento della richiesta.
+      if (hostType !== "js") return undefined;
+      return { runtime: `(window.__HERMES_BASE_PATH__||"")+"/${filename}"` };
+    },
+  },

@@ -1,0 +1,8 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Senza nginx l'App è irraggiungibile: fermiamo il container e lasciamo che
+# sia il Supervisor (watchdog) a decidere il riavvio.
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+    bashio::log.error "nginx terminato con codice ${1}: arresto dell'App"
+    /run/s6/basedir/bin/halt
+fi

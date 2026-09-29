@@ -1,0 +1,93 @@
+name: Release
+
+# Ogni PR mergiata su main (e ogni push diretto su main) pubblica una release,
+# se e solo se la versione dell'add-on è cambiata. La versione è quella
+# dichiarata in hermes_agent/config.yaml: è la stessa che il Supervisor di
+# Home Assistant usa per proporre l'aggiornamento, quindi resta l'unica fonte
+# di verità. Il tag segue il versionamento semantico, con prefisso `v`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Leggi la versione dal manifest
+        id: version
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version:' hermes_agent/config.yaml \
+            | sed -E 's/^version:[[:space:]]*"?([^"]+)"?[[:space:]]*$/\1/')"
+          if [ -z "$version" ]; then
+            echo "::error::Nessuna chiave 'version' in hermes_agent/config.yaml"
+            exit 1
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::La versione '$version' non è nel formato X.Y.Z"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "Versione rilevata: $version"
+
+      - name: La release esiste già?
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "La release $TAG esiste già: niente da fare."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Estrai le note dal CHANGELOG
+        if: steps.check.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # La sezione del CHANGELOG che inizia con "## <versione>", fino alla
+          # successiva intestazione di pari livello.
+          awk -v v="## $VERSION" '
+            $0 == v { found = 1; next }
+            /^## / { if (found) exit }
+            found { print }
+          ' hermes_agent/CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            printf 'Vedi il CHANGELOG per i dettagli di questa versione.\n' > notes.md
+            echo "::warning::Nessuna sezione '## $VERSION' nel CHANGELOG: uso note generiche."
+          fi
+          {
+            printf '\n---\n\n'
+            printf 'Installazione: aggiungi questo repository in Home Assistant\n'
+            printf '(**Impostazioni → Add-on → Store → ⋮ → Repository**), poi installa\n'
+            printf '"Hermes Agent". Leggi `SECURITY.md` prima di usarlo.\n'
+          } >> notes.md
+
+      - name: Pubblica la release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}"

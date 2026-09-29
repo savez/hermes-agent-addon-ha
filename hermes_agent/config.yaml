@@ -1,0 +1,69 @@
+name: Hermes Agent
+version: "0.6.3"
+slug: hermes_agent
+description: Hermes Agent (NousResearch) con dashboard di amministrazione e CLI via SSH
+url: https://github.com/NousResearch/hermes-agent
+arch:
+  - aarch64
+  - amd64
+
+# Nessuna chiave `image:` → il Supervisor builda l'immagine in locale dal
+# Dockerfile di questa cartella. Non si scarica nessuna immagine precompilata.
+
+# s6-overlay (dall'immagine base HA) deve essere PID 1.
+init: false
+startup: application
+boot: auto
+
+# Tornati a Ingress (2026-09-25, dopo il tentativo con porta diretta in
+# 0.4.0): vedi CLAUDE.md regola #5 e CHANGELOG 0.5.0. `nginx.conf` ora
+# include anche un fix "al buio" per il prefisso del path di Ingress, da
+# verificare sul Pi con i log dedicati che scrive.
+ingress: true
+ingress_port: 8099
+panel_title: Hermes
+panel_icon: mdi:robot-outline
+panel_admin: true
+
+# Riavvio automatico se la dashboard non risponde (va attivato anche dal
+# toggle "Sistema di controllo e sorveglianza" nella pagina dell'App).
+# /api/health è l'endpoint di liveness pubblico della dashboard nativa.
+#
+# Porta letterale (8099), non `[PORT:8099]`: quel segnaposto si risolve
+# solo per porte elencate in `ports:` sotto, e 8099 (Ingress) non lo è —
+# bug reale già corso una volta (vedi CHANGELOG 0.3.1), non ripeterlo.
+watchdog: "http://[HOST]:8099/api/health"
+
+# ── Permessi ────────────────────────────────────────────────────────────────
+# homeassistant_api: inietta SUPERVISOR_TOKEN per parlare con HA Core.
+# hassio_api: false → nessun accesso all'API del Supervisor (App, host, backup).
+homeassistant_api: true
+hassio_api: false
+
+# /share serve solo a pubblicare l'indirizzo interno del container
+# (/share/hermes-agent/address) per il tunnel SSH. Vedi DOCS.md.
+map:
+  - share:rw
+
+# Porta SSH della CLI, pubblicata direttamente sulla LAN (deciso il
+# 2026-09-25, coerente con l'accesso diretto scelto per la dashboard prima
+# del ritorno a Ingress): connessione con `ssh -p 2222 hermes@<ip-del-pi>`,
+# solo a chiave (mai password, mai root — vedi CLAUDE.md regola #11).
+ports:
+  2222/tcp: 2222
+ports_description:
+  2222/tcp: SSH per la CLI di Hermes, pubblicata sulla LAN (solo a chiave)
+
+backup_exclude:
+  - "hermes/home/.cache/*"
+
+options:
+  ha_access: mcp
+  allow_shell_tools: false
+  ssh_authorized_keys: []
+
+schema:
+  ha_access: list(mcp|full|none)
+  allow_shell_tools: bool
+  ssh_authorized_keys:
+    - str

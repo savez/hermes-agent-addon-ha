@@ -1,0 +1,33 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Gateway di Hermes (il processo che parla con Telegram e gli altri canali),
+# come utente non privilegiato. Se esce, s6 lo riavvia automaticamente.
+#
+# Il nome della cartella è `main-hermes` di proposito: è il nome con cui
+# hermes-agent si aspetta di trovare il servizio statico del gateway sotto
+# supervisione s6 (vedi hermes_cli/doctor_platform.py upstream, che sonda
+# esattamente "main-hermes" e "dashboard"), così `hermes doctor` lo riconosce.
+#
+# HERMES_S6_SUPERVISED_CHILD=1 è obbligatorio (2026-09-26, T7): senza,
+# `hermes gateway run` non gira in foreground ma rimbalza su `gateway start`,
+# che prova a registrarsi come servizio s6 dinamico scrivendo in /run/service
+# — di root, non scrivibile da `hermes` — e muore con
+# "[Errno 13] Permission denied: '/run/service/.gateway-default.tmp'".
+# Diagnosticato via SSH sul Pi reale. Non rimuovere questa riga: quella
+# registrazione dinamica assume anche i path dell'immagine ufficiale
+# (/opt/hermes/.venv, /opt/data), che qui non esistono.
+#
+# --replace: se un `hermes gateway run` avviato a mano (CLI via SSH) ha preso
+# il lock, il servizio supervisionato lo sostituisce invece di morire in loop.
+
+export HOME=/data/hermes/home
+export HERMES_HOME=/data/hermes
+export HERMES_S6_SUPERVISED_CHILD=1
+
+# Il token per HA arriva dal .env (HERMES_HA_TOKEN): quello del Supervisor
+# non serve nell'ambiente del gateway.
+unset SUPERVISOR_TOKEN
+
+bashio::log.info "Avvio Hermes Gateway (canali di messaggistica)"
+cd /opt/hermes-agent || exit 1
+exec s6-setuidgid hermes /opt/hermes-agent/.venv/bin/hermes gateway run --replace

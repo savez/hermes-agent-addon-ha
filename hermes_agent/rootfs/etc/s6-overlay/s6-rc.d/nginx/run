@@ -1,0 +1,6 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# Reverse proxy Ingress → Web UI.
+bashio::net.wait_for 8788 127.0.0.1 300
+bashio::log.info "Avvio nginx sulla porta Ingress 8099"
+exec nginx -c /etc/nginx/nginx.conf -g 'daemon off;'
