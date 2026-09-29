@@ -13,7 +13,6 @@ dashboard nativa come pannello nella sidebar (Ingress) e una CLI via SSH.
 [![Build](https://img.shields.io/badge/build-locale%2C%20nessuna%20immagine%20precompilata-informational)](hermes_agent/Dockerfile)
 [![Upstream](https://img.shields.io/badge/upstream-NousResearch%2Fhermes--agent-blueviolet?logo=github)](https://github.com/NousResearch/hermes-agent)
 [![Licenza](https://img.shields.io/badge/licenza-MIT-green)](LICENSE)
-[![Sicurezza](https://img.shields.io/badge/modello%20di%20sicurezza-leggimi-important)](SECURITY.md)
 
 </div>
 
