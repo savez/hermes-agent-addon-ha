@@ -128,11 +128,23 @@ RUN set -euxo pipefail; \
 # `hermes update` esegue `uv sync`, che rimuove quanto il lock non conosce.
 # Costa 68 MB; va nel venv dell'agent, non in un venv separato, perché è
 # quello da cui Hermes importa.
+#
+# pyyaml è una dipendenza **nostra**: `render_config.py` fa `import yaml` e
+# gira con questo stesso venv (`init-hermes.sh`: `PY=/opt/hermes-agent/.venv/
+# bin/python`). Finora la prendevamo in prestito dalle dipendenze transitive
+# di hermes-agent, e si è rotta appena upstream è passato da PyYAML a
+# `ruamel.yaml` nella v0.21.7: il build si è fermato su `ModuleNotFoundError:
+# No module named 'yaml'` (2026-10-12). Dipendere da una transitiva altrui è
+# una fragilità silenziosa — qui la dichiariamo.
+#
+# Il controllo di import sotto non è decorativo: è ciò che ha fermato il build
+# invece di consegnare un'immagine che si costruisce e poi non parte, perché
+# `init-hermes.sh` esegue `render_config.py` a ogni avvio.
 WORKDIR /opt/hermes-agent
 RUN set -eux; \
     uv python install "${PYTHON_VERSION}"; \
     uv sync --frozen --python "${PYTHON_VERSION}" ${HERMES_EXTRAS}; \
-    uv pip install --python .venv/bin/python numpy; \
+    uv pip install --python .venv/bin/python numpy pyyaml; \
     .venv/bin/python -c "import yaml, cryptography, fastapi, uvicorn, numpy"; \
     rm -rf /opt/hermes-agent/tests /opt/hermes-agent/website /opt/hermes-agent/docs
 
