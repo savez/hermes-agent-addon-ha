@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.7.3
+
+**La dashboard non partiva più: dalla v0.21.7 servono due workspace Node, non
+uno.**
+Il build della 0.7.2 è riuscito e ha portato Hermes Agent a **v0.21.7**. Poi
+il servizio della dashboard è entrato in ciclo di riavvii.
+
+- **Errore**, ripetuto a ogni tentativo:
+  `Workspace dependencies are stale or missing and lazy installs are disabled`
+  da `scripts/build/node-deps.mjs`, invocato con
+  `--workspace ui-tui --workspace web`.
+- **Causa**: il `Dockerfile` installava `npm install --workspace web`. Nella
+  v0.21.7 la dashboard, prima di avviarsi, verifica **entrambi** i workspace.
+  Verificato nell'immagine costruita: `node_modules` presenti nella radice
+  (305 pacchetti) e in `web` (4), **assenti in `ui-tui`**. Con i lazy install
+  spenti (regola #9) non può rimediare da sé, quindi s6 riavvia il servizio
+  all'infinito.
+- **Fix**: `--workspace ui-tui` aggiunto all'install, e un
+  `test -d ui-tui/node_modules` accanto ai controlli che già verificano
+  `web_dist/index.html` e la patch del base path. Senza quel controllo
+  l'immagine si costruisce e consegna il ciclo di riavvii.
+
+**Nota sul provider di memoria `holographic`.** La v0.21.7 lo ha **rimosso**
+dai provider inclusi (restano `retaindb` e `byterover`) e non è nel catalogo
+dei plugin. Non va reinserito nell'immagine: Hermes carica i plugin anche da
+`$HERMES_HOME/plugins`, quindi la sede giusta è
+`/data/hermes/plugins/memory/holographic` — nel volume persistente, fuori dal
+clone git, immune a rebuild e `hermes update`. Si recupera dal tag precedente
+senza sporcare l'indice git:
+
+```sh
+git -C /opt/hermes-agent fetch origin tag v2026.9.24 --no-tags
+git -C /opt/hermes-agent archive v2026.9.24 plugins/memory/holographic \
+    | tar -x -C /tmp
+cp -r /tmp/plugins/memory/holographic /data/hermes/plugins/memory/
+```
+
+Verificato sul dispositivo: il plugin implementa l'interfaccia
+`MemoryProvider` della v0.21.7 **senza metodi mancanti**, si carica per tutti
+i profili, e il recupero vettoriale resta attivo (`HRR = 0.3`, grazie a numpy
+nell'immagine dalla 0.6.4).
+
+
 ## 0.7.2
 
 **`render_config.py` prendeva in prestito PyYAML da hermes-agent, e upstream
