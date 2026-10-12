@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.4
+
+**La dashboard ricostruiva il frontend a ogni avvio e falliva in ciclo:
+`--skip-build`.**
+Terza e ultima conseguenza del salto a hermes-agent v0.21.7. La 0.7.3 aveva
+aggiunto il workspace `ui-tui` — necessario, ma **non era quello il
+problema**.
+
+- **Causa vera**: `scripts/build/node-deps.mjs` non guarda se i
+  `node_modules` ci sono. Calcola una **ricevuta**, un hash che include
+  `process.versions.node`, la versione di npm, la piattaforma, gli argomenti
+  e i checksum di `package-lock.json` e di ogni `package.json`, e la confronta
+  con quella scritta da un'installazione precedente. Due motivi per cui non
+  può mai combaciare nel nostro caso: il nostro `npm install` non scrive
+  nessuna ricevuta, e soprattutto **le versioni non coincidono** — misurato
+  sul dispositivo: immagine `node 26.11.1 / npm 11.20.0`, runtime
+  `node 26.7.0 / npm 12.0.2`, perché il package manager di Hermes si scarica
+  una toolchain fissata in `pm/lock.json` dentro `$HERMES_HOME/tools`.
+- **Fix**: `--skip-build` nel servizio s6 della dashboard — *"Skip the web UI
+  build step and serve the existing dist"*. Il frontend è già compilato
+  nell'immagine e il `Dockerfile` lo verifica. Provato sul dispositivo prima
+  di scriverlo: `HTTP 200`, log
+  `→ Skipping web UI build (--skip-build); using dist at .../web_dist`.
+- **Non è un ripiego**: per un'immagine immutabile, ricostruire il frontend a
+  ogni avvio non ha senso. Lo si faceva solo perché prima non falliva.
+- Il workspace `ui-tui` introdotto nella 0.7.3 **resta**: serve alla TUI
+  raggiungibile via SSH, che gira davvero (`node .../ui-tui/dist/...`).
+
+
 ## 0.7.3
 
 **La dashboard non partiva più: dalla v0.21.7 servono due workspace Node, non

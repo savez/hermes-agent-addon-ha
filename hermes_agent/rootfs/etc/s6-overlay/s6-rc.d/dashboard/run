@@ -19,5 +19,15 @@ unset SUPERVISOR_TOKEN
 
 bashio::log.info "Avvio Hermes Dashboard su 127.0.0.1:8788"
 cd /opt/hermes-agent || exit 1
+# --skip-build: la dashboard è già compilata nell'immagine (il Dockerfile
+# esegue `npm run build --prefix web` e verifica `web_dist/index.html`).
+# Senza, Hermes prova a ricostruirla a ogni avvio: `node-deps.mjs` confronta
+# una ricevuta che include le versioni di node e npm, e quelle dell'immagine
+# non coincidono con quelle che il package manager di Hermes scarica in
+# `$HERMES_HOME/tools` (misurato: immagine node 26.11.1 / npm 11.20.0,
+# runtime node 26.7.0 / npm 12.0.2). Il confronto fallisce sempre, i lazy
+# install sono spenti (regola #9) e il servizio riparte in ciclo — incidente
+# del 2026-10-12. Non è un ripiego: per un'immagine immutabile ricostruire il
+# frontend a runtime non ha senso comunque.
 exec s6-setuidgid hermes /opt/hermes-agent/.venv/bin/hermes dashboard \
-    --host 127.0.0.1 --port 8788 --no-open
+    --host 127.0.0.1 --port 8788 --no-open --skip-build
