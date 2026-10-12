@@ -94,11 +94,21 @@ RUN set -euxo pipefail; \
 # nessuna risoluzione di dipendenze, solo le versioni pinnate in uv.lock).
 # La dashboard (frontend Vite + backend FastAPI) è dentro hermes-agent
 # stesso: nessun secondo progetto da clonare/gestire separatamente.
+#
+# numpy è aggiunto a parte perché non sta nel lockfile di Hermes: è la
+# dipendenza opzionale del provider di memoria `holographic`, che senza di
+# essa degrada **in silenzio** a sola ricerca full-text — `_HAS_NUMPY=False`
+# azzera il peso HRR e fa ricadere `probe`, `related` e `reason` su FTS5
+# (plugins/memory/holographic/retrieval.py). Installarla a runtime non regge:
+# `hermes update` esegue `uv sync`, che rimuove quanto il lock non conosce.
+# Costa 68 MB; va nel venv dell'agent, non in un venv separato, perché è
+# quello da cui Hermes importa.
 WORKDIR /opt/hermes-agent
 RUN set -eux; \
     uv python install "${PYTHON_VERSION}"; \
     uv sync --frozen --python "${PYTHON_VERSION}" ${HERMES_EXTRAS}; \
-    .venv/bin/python -c "import yaml, cryptography, fastapi, uvicorn"; \
+    uv pip install --python .venv/bin/python numpy; \
+    .venv/bin/python -c "import yaml, cryptography, fastapi, uvicorn, numpy"; \
     rm -rf /opt/hermes-agent/tests /opt/hermes-agent/website /opt/hermes-agent/docs
 
 # ─── Stage 2: runtime ───────────────────────────────────────────────────────

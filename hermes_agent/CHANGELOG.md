@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.6.4
+
+**La memoria `holographic` aveva la ricerca vettoriale spenta, in silenzio.**
+Il provider di memoria `holographic` — SQLite locale, nessuna dipendenza,
+l'unico degli otto che non manda nulla fuori — dichiara NumPy come
+*opzionale*. Senza, non fallisce: **degrada**.
+
+- **Causa**: `FactRetriever.__init__`
+  (`plugins/memory/holographic/retrieval.py`) controlla `hrr._HAS_NUMPY` e,
+  se è falso, ridistribuisce i pesi da `fts=0.4 / jaccard=0.3 / HRR=0.3` a
+  `fts=0.6 / jaccard=0.4 / **HRR=0.0**`. Le azioni `probe`, `related` e
+  `reason` di `fact_store` ricadono su FTS5 (`"Falls back to FTS5 without
+  numpy"`). Nessun log, nessun avviso: la memoria funziona, ma solo per
+  parole che combaciano. Misurato sul Pi: `_HAS_NUMPY: False`, `HRR = 0.0`.
+- **Perché non si risolve a runtime**: installare NumPy nel venv a mano
+  regge fino al primo `hermes update`, che esegue `uv sync` — e il sorgente
+  di Hermes lo dice esplicitamente: *"`uv sync`/reinstall strips anything
+  Hermes' own lock does not know"*. Sarebbe sparito senza dire niente,
+  riportando la memoria alla sola ricerca testuale.
+- **Fix**: `uv pip install numpy` nel venv dell'agent in fase di build, con
+  `numpy` aggiunto al controllo di import che già verifica `yaml`,
+  `cryptography`, `fastapi`, `uvicorn` — così un'immagine che lo perde
+  **non si costruisce** invece di costruirsi monca. Costo: 68 MB
+  (40 `numpy` + 28 `numpy.libs`, misurati su aarch64).
+- **Nota per chi aggiorna**: i fatti salvati *prima* di questa versione non
+  hanno il vettore HRR (colonna `hrr_vector` vuota) e restano invisibili
+  alla ricerca vettoriale finché non vengono riscritti. Si ricalcolano
+  chiamando `MemoryStore._compute_hrr_vector(fact_id, content)` sulle righe
+  con `hrr_vector IS NULL`.
+
+
 ## 0.6.3
 
 **Il pulsante "Update" ora segue le release, non il branch `main`.**
