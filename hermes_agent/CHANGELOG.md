@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.2
+
+**`render_config.py` prendeva in prestito PyYAML da hermes-agent, e upstream
+è passato a `ruamel.yaml`.**
+Seconda cosa emersa costruendo davvero la v0.21.7, dopo il salto a Python
+3.14 della 0.7.1.
+
+- **Errore**: il build si ferma su
+  `ModuleNotFoundError: No module named 'yaml'`, al controllo di import.
+  Fra i 119 pacchetti installati da `uv sync` c'è `ruamel-yaml==0.18.16`;
+  `pyyaml` non c'è più.
+- **Causa**: `render_config.py` fa `import yaml` e gira con il venv di
+  hermes-agent (`init-hermes.sh`: `PY=/opt/hermes-agent/.venv/bin/python`).
+  Quel modulo non è mai stato una nostra dipendenza **dichiarata**: arrivava
+  come transitiva di hermes-agent, e ha smesso di arrivare. È l'unica
+  dipendenza esterna di quello script — gli altri import sono `hashlib`,
+  `os`, `sys`.
+- **Fix**: `pyyaml` installato esplicitamente accanto a `numpy`. La
+  dipendenza è nostra e ora è dichiarata come tale.
+- **Cosa ci ha salvato**: il controllo
+  `.venv/bin/python -c "import yaml, ..."` — già presente da prima, esteso a
+  `numpy` nella 0.6.4 — ha **fermato il build** invece di consegnare
+  un'immagine che si costruisce e poi **non parte**, dato che
+  `init-hermes.sh` esegue `render_config.py` a ogni avvio. Senza, l'add-on
+  sarebbe morto all'avvio con un errore che non rimanda a questa causa.
+
+
 ## 0.7.1
 
 **Il build della 0.7.0 falliva: Hermes v0.21.7 vuole Python 3.14.**
