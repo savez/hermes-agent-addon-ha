@@ -62,11 +62,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
+        curl \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-# Clona l'ultimo tag disponibile (nessuna verifica di un commit atteso: non
+# Clona l'ultimo tag di release (nessuna verifica di un commit atteso: non
 # c'è più un valore fisso da controllare, per scelta esplicita dell'utente).
+#
+# La fonte è l'**API delle release**, non l'ordinamento dei tag git. Upstream
+# ha cambiato schema di tag — da data (`v2026.9.24`) a semver (`v0.21.7`) — e
+# `--sort=-v:refname` ordina per versione: `2026` batte `0`, quindi i vecchi
+# tag a data avrebbero vinto per sempre e ogni rebuild avrebbe reinstallato
+# `v0.21.5` credendola l'ultima. Il fallback sui tag git resta per quando
+# l'API non risponde (limite non autenticato: 60 richieste/ora per IP) e
+# filtra via proprio i tag a data con un anno a quattro cifre.
 # Storia completa dei commit (niente --depth 1): serve a `hermes update`,
 # che dopo il primo avvio fa `git fetch`/`git merge --ff-only` dentro questa
 # stessa cartella — un clone superficiale (shallow) renderebbe quei fetch
@@ -83,8 +92,16 @@ RUN apt-get update \
 # -c 'set -o pipefail; ...'` è valido ed è quello davvero eseguito qui).
 # hadolint ignore=DL4006,SC3040
 RUN set -euxo pipefail; \
-    tag="$(git ls-remote --tags --sort=-v:refname "${HERMES_REPO}" \
-        | grep -v '\^{}' | head -1 | sed 's#.*refs/tags/##')"; \
+    api_repo="$(echo "${HERMES_REPO}" | sed 's#https://github.com/##; s#\.git$##')"; \
+    tag="$(curl -fsSL --retry 2 "https://api.github.com/repos/${api_repo}/releases/latest" \
+        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)"; \
+    if [ -z "${tag}" ]; then \
+        echo "hermes-agent: API delle release non disponibile, uso i tag git"; \
+        tag="$(git ls-remote --tags --sort=-v:refname "${HERMES_REPO}" \
+            | grep -v '\^{}' | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vE '^v[0-9]{4}\.' \
+            | head -1)"; \
+    fi; \
     test -n "${tag}"; \
     echo "hermes-agent: ultimo tag risolto al build = ${tag}"; \
     git clone --filter=tree:0 --branch "${tag}" "${HERMES_REPO}" /opt/hermes-agent; \

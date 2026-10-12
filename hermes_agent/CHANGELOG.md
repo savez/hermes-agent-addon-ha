@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.7.0
+
+**Il build era fermo su `v0.21.5` e avrebbe continuato per sempre: upstream
+ha cambiato schema di tag.**
+Hermes è passato dai tag a data (`v2026.9.24`) al semver (`v0.21.7`). Il
+`Dockerfile` risolveva "l'ultimo tag" con `git ls-remote --sort=-v:refname`,
+che ordina **per versione**: `2026` batte `0`, quindi i vecchi tag a data
+avrebbero vinto per sempre.
+
+- **Sintomo**: nessuno. Ogni rebuild reinstallava `v2026.9.24` — cioè
+  `v0.21.5` — stampando "ultimo tag risolto al build" come se fosse giusto.
+  L'add-on sarebbe rimasto indietro in silenzio a ogni aggiornamento futuro.
+- **Verifica**: `git ls-remote --tags --sort=-v:refname` sul repo di Hermes
+  restituisce oggi, in testa, `v2026.9.24 · v2026.9.21 · v2026.9.14`. La
+  release corrente è `v0.21.7`.
+- **Fix**: la fonte autorevole è l'**API delle release** di GitHub, che
+  restituisce esattamente "l'ultimo tag di release" come vuole la regola #2.
+  Resta un fallback sui tag git per quando l'API non risponde (limite non
+  autenticato: 60 richieste/ora per IP), che filtra i soli tag semver
+  escludendo quelli con un anno a quattro cifre. Entrambi i percorsi
+  verificati: danno `v0.21.7`, e il fallback non fa abortire il build.
+  Aggiunto `curl` allo stage builder — che non finisce nell'immagine finale,
+  ricostruita da zero nello stage 2.
+- **Conseguenza**: questa versione porta Hermes Agent da **v0.21.5 a
+  v0.21.7**.
+
+**Nota sull'aggiornamento.** Niente di tuo viene perso: memoria
+(`memories/`, `memory_store.db`), skill, cron, `config.yaml`, `.env`,
+`SOUL.md` e sessioni stanno in `/data/hermes`, che il rebuild non tocca.
+Viene ricostruito solo `/opt/hermes-agent`.
+
+
 ## 0.6.4
 
 **La memoria `holographic` aveva la ricerca vettoriale spenta, in silenzio.**
