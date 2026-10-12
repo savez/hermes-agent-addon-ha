@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.1
+
+**Il build della 0.7.0 falliva: Hermes v0.21.7 vuole Python 3.14.**
+La correzione del tag introdotta nella 0.7.0 ha funzionato — il clone è
+passato a `v0.21.7` — e ha fatto emergere un secondo problema che prima
+restava nascosto dietro la versione vecchia.
+
+- **Errore**: `uv sync --frozen` muore con
+  `The current Python platform is not compatible with the lockfile's
+  supported environments: python_full_version >= '3.14'`.
+- **Causa**: il `Dockerfile` fissava `PYTHON_VERSION=3.12`. Il `pyproject`
+  della v0.21.7 dichiara `requires-python = ">=3.11, <3.15"`, quindi la 3.12
+  *sarebbe* ammessa — ma `uv.lock` è stato risolto per la sola 3.14
+  (`resolution-markers = ["python_full_version >= '3.14' ..."]`), e `--frozen`
+  pretende l'ambiente del lock, non uno qualsiasi fra quelli ammessi. È la
+  distinzione che ha fatto perdere tempo: `requires-python` e gli ambienti
+  del lock sono due vincoli diversi.
+- **Fix**: `PYTHON_VERSION=3.14`. Verificato che la build standalone
+  `cpython-3.14.8` per `aarch64-unknown-linux-gnu` esista e sia installabile
+  da uv. Nessun altro punto del repo fissa una versione di Python: il
+  percorso di `site-packages` non è mai scritto a mano.
+- **Nota**: questo vincolo va ricontrollato a ogni salto di versione di
+  hermes-agent, perché dipende da come upstream rigenera il lock. Il commento
+  nel `Dockerfile` lo dice accanto all'`ARG`.
+
+
 ## 0.7.0
 
 **Il build era fermo su `v0.21.5` e avrebbe continuato per sempre: upstream

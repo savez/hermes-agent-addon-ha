@@ -47,7 +47,15 @@ ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
 # requirements not met" / "No adapter available for telegram" — diagnosticato
 # via SSH sul Pi reale il 2026-09-26 (T7).
 ARG HERMES_EXTRAS="--extra all --extra anthropic --extra messaging"
-ARG PYTHON_VERSION=3.12
+# La versione deve corrispondere a quella per cui è stato risolto `uv.lock`,
+# non a quella che `requires-python` dichiara ammissibile: `uv sync --frozen`
+# pretende l'ambiente del lock e rifiuta gli altri. Il lock della v0.21.7 dice
+# `requires-python = ">=3.11, <3.15"` ma ha
+# `resolution-markers = ["python_full_version >= '3.14' ..."]`, quindi con la
+# 3.12 il build muore con "The current Python platform is not compatible with
+# the lockfile's supported environments" (incidente del 2026-10-12). Da
+# ricontrollare a ogni salto di versione di hermes-agent.
+ARG PYTHON_VERSION=3.14
 
 ENV DEBIAN_FRONTEND=noninteractive \
     UV_PYTHON_INSTALL_DIR=/opt/python \
