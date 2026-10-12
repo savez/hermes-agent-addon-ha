@@ -232,13 +232,24 @@ RUN set -eux; \
 
 # Non è un `npm install <pkg>` senza versione: installa l'intero
 # workspace dal `package-lock.json` committato (versioni già pinnate lì).
+#
+# Servono DUE workspace, non solo `web`. Dalla v0.21.7 la dashboard, prima di
+# partire, chiama `scripts/build/node-deps.mjs --workspace ui-tui --workspace
+# web`: se le dipendenze di uno dei due mancano solleva "Workspace
+# dependencies are stale or missing and lazy installs are disabled" e il
+# servizio **riparte in ciclo** (regola #9: i lazy install sono spenti, quindi
+# non può rimediare da sé). Con il solo `web` installato l'immagine si
+# costruisce benissimo e la dashboard non parte mai — incidente del
+# 2026-10-12. Il `test -d ui-tui/node_modules` sotto è lì per far fallire il
+# build invece di consegnare quel ciclo.
 # hadolint ignore=DL3016
 RUN set -eux; \
-    npm install --workspace web --include-workspace-root \
+    npm install --workspace web --workspace ui-tui --include-workspace-root \
         --prefer-offline --no-audit --fetch-retries=5; \
     npm run build --prefix web; \
     test -f hermes_cli/web_dist/index.html; \
-    grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js
+    grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js; \
+    test -d ui-tui/node_modules
 
 COPY rootfs /
 
