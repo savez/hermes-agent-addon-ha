@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.2
+
+**L'MCP di Home Assistant spento resta spento.**
+
+- `render_config.py` a ogni avvio riscriveva per intero la voce
+  `mcp_servers.homeassistant` (url e token), cancellando un `enabled: false`
+  impostato dalla dashboard o a mano e qualunque altra chiave (filtri sui
+  tool, header in più). Ora impone solo url e header `Authorization` e
+  lascia il resto. Serve a chi con `full` vuole usare solo il plugin
+  `homeassistant` senza i 27 tool MCP. Verificato con
+  `test_mcp_user_keys_survive_restart`.
+
 ## 0.8.1
 
 **Chat della dashboard e TUI di nuovo funzionanti; plugin Home Assistant

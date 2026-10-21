@@ -13,7 +13,8 @@ Chiavi gestite:
   security.allow_lazy_installs  sempre false (niente pip install a runtime)
   gateway.multiplex_profiles    sempre true (un gateway serve tutti i profili)
   update.installs.<id>.channel  sempre stable (mai il branch main)
-  mcp_servers.homeassistant     presente se ha_access è mcp o full
+  mcp_servers.homeassistant     url e token se ha_access è mcp o full (le altre
+                                chiavi, es. enabled: false, restano)
   plugins.enabled               contiene "homeassistant" solo se ha_access è full
 
 Fuori dal file: con ha_access full crea il link
@@ -227,12 +228,20 @@ def main() -> None:
     # ── MCP Server di Home Assistant ────────────────────────────────────────
     # Il token non viene scritto qui: Hermes interpola ${HERMES_HA_TOKEN}
     # dall'ambiente, che carica da /data/hermes/.env.
+    # Si impongono solo url e token: le altre chiavi della voce (`enabled:
+    # false`, filtri sui tool) sono scelte dell'utente e restano. Fino alla
+    # 0.8.1 la voce era riscritta per intero e un MCP spento dalla dashboard
+    # si riaccendeva al riavvio.
     mcp_servers = cfg.get("mcp_servers") or {}
     if ha_access in ("mcp", "full"):
-        mcp_servers["homeassistant"] = {
-            "url": HA_MCP_URL,
-            "headers": {"Authorization": "Bearer ${HERMES_HA_TOKEN}"},
-        }
+        entry = mcp_servers.get("homeassistant")
+        entry = entry if isinstance(entry, dict) else {}
+        headers = entry.get("headers")
+        headers = headers if isinstance(headers, dict) else {}
+        headers["Authorization"] = "Bearer ${HERMES_HA_TOKEN}"
+        entry["url"] = HA_MCP_URL
+        entry["headers"] = headers
+        mcp_servers["homeassistant"] = entry
     else:
         mcp_servers.pop("homeassistant", None)
     if mcp_servers:

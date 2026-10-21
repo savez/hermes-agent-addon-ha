@@ -126,6 +126,12 @@ Per far vedere entità di Home Assistant all'agente:
      contenuti dal web;
    - `none`: l'agente non vede nulla di HA.
 
+   Con `full` l'MCP resta attivo accanto al plugin, e i due si
+   sovrappongono (27 tool MCP più i 4 `ha_*`). Se ti basta il plugin, spegni
+   l'MCP dalla dashboard di Hermes o mettendo `enabled: false` sotto
+   `mcp_servers.homeassistant` nel `config.yaml` del profilo: dalla 0.8.2
+   l'App imposta solo url e token di quella voce e la tua scelta resta.
+
 ## CLI via SSH
 
 La CLI serve per i comandi che la dashboard non copre e per diagnosticare
