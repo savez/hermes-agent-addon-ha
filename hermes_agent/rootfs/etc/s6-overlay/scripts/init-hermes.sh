@@ -57,6 +57,14 @@ for profile_dir in "${HERMES_DIR}"/profiles/*/; do
     [ -d "${profile_dir}" ] || continue
     case "$(basename "${profile_dir}")" in .*) continue ;; esac
     write_ha_env "${profile_dir}.env"
+    # Plugin HA anche nei profili: con `full` ricevono HASS_TOKEN, e senza il
+    # plugin Hermes avviserebbe a ogni avvio che "Home Assistant moved out of
+    # core". Solo il plugin: gli altri vincoli non sono ancora applicati ai
+    # profili (limite noto, vedi render_config.py).
+    if [ -f "${profile_dir}config.yaml" ]; then
+        "${PY}" /usr/local/lib/hermes-ha/render_config.py --profile \
+            "${profile_dir}config.yaml" "${HA_ACCESS}"
+    fi
     PROFILE_COUNT=$((PROFILE_COUNT + 1))
 done
 

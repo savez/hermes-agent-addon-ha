@@ -2,6 +2,7 @@
 
 Uso: render_config.py <config.yaml> <ha_access: mcp|full|none> <allow_shell: true|false>
                         [plugin_src]
+     render_config.py --profile <config.yaml> <ha_access> [plugin_src]
 
 Eseguito a ogni avvio. Tocca solo le chiavi elencate qui sotto; tutto il resto
 (modello, provider, preferenze salvate da Web UI o CLI) resta com'è.
@@ -18,6 +19,11 @@ Chiavi gestite:
 Fuori dal file: con ha_access full crea il link
 <cartella del config>/plugins/homeassistant -> plugin_src (default
 /opt/hermes-ha-plugins/homeassistant), altrimenti lo toglie.
+
+Con --profile (profili secondari, profiles/*/config.yaml) gestisce SOLO il
+plugin HA: link, plugins.enabled/disabled e la voce `homeassistant` in
+agent.disabled_toolsets. Gli altri vincoli non sono ancora applicati ai
+profili: è un limite noto, da risolvere a parte.
 """
 
 import hashlib
@@ -63,6 +69,9 @@ def sync_ha_plugin(config_path: str, ha_access: str, plugin_src: str, cfg: dict)
     enabled = [p for p in (plugins.get("enabled") or []) if p != HA_PLUGIN_NAME]
 
     if ha_access == "full":
+        # plugins.disabled vince su plugins.enabled: con `full` va tolto.
+        if HA_PLUGIN_NAME in (plugins.get("disabled") or []):
+            plugins["disabled"] = [p for p in plugins["disabled"] if p != HA_PLUGIN_NAME]
         os.makedirs(os.path.dirname(link), exist_ok=True)
         if os.path.islink(link) and os.readlink(link) != plugin_src:
             os.remove(link)
@@ -86,15 +95,49 @@ def sync_ha_plugin(config_path: str, ha_access: str, plugin_src: str, cfg: dict)
         cfg["plugins"] = plugins
 
 
+def allow_ha_toolset(ha_access: str, cfg: dict) -> None:
+    """Con `full` toglie `homeassistant` da agent.disabled_toolsets: Hermes
+    applica quella lista ai singoli tool, e sul Pi la voce c'era già
+    (2026-10-21), quindi senza toglierla `full` resterebbe senza tool ha_*."""
+    agent = cfg.get("agent") or {}
+    disabled = agent.get("disabled_toolsets")
+    if ha_access == "full" and isinstance(disabled, list) and "homeassistant" in disabled:
+        agent["disabled_toolsets"] = [t for t in disabled if t != "homeassistant"]
+        cfg["agent"] = agent
+
+
+def load(path: str) -> dict:
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        return yaml.safe_load(fh) or {}
+
+
+def save(path: str, cfg: dict) -> None:
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        yaml.safe_dump(cfg, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    os.replace(tmp, path)
+
+
+def profile_main(argv: list) -> None:
+    path, ha_access = argv[0:2]
+    plugin_src = argv[2] if len(argv) > 2 else HA_PLUGIN_SRC
+    cfg = load(path)
+    allow_ha_toolset(ha_access, cfg)
+    sync_ha_plugin(path, ha_access, plugin_src, cfg)
+    save(path, cfg)
+
+
 def main() -> None:
+    if sys.argv[1] == "--profile":
+        profile_main(sys.argv[2:])
+        return
     path, ha_access, allow_shell_raw = sys.argv[1:4]
     plugin_src = sys.argv[4] if len(sys.argv) > 4 else HA_PLUGIN_SRC
     allow_shell = allow_shell_raw.lower() == "true"
 
-    cfg = {}
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as fh:
-            cfg = yaml.safe_load(fh) or {}
+    cfg = load(path)
 
     # ── toolset per Web UI e CLI (piattaforma "cli") ────────────────────────
     platform_toolsets = cfg.get("platform_toolsets") or {}
@@ -131,6 +174,7 @@ def main() -> None:
         disabled |= set(UNSAFE)
     agent["disabled_toolsets"] = sorted(disabled)
     cfg["agent"] = agent
+    allow_ha_toolset(ha_access, cfg)
 
     # ── niente installazioni di pacchetti a runtime ─────────────────────────
     security = cfg.get("security") or {}
@@ -199,10 +243,7 @@ def main() -> None:
     # ── plugin Home Assistant (solo full) ───────────────────────────────────
     sync_ha_plugin(path, ha_access, plugin_src, cfg)
 
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        yaml.safe_dump(cfg, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    os.replace(tmp, path)
+    save(path, cfg)
 
     print(f"[render_config] toolset cli: {', '.join(cli)}")
     print(f"[render_config] ha_access={ha_access} allow_shell_tools={allow_shell}")

@@ -151,7 +151,12 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     HERMES_HOME=/data/hermes \
     HERMES_WRITE_SAFE_ROOT=/data/hermes \
-    HERMES_DISABLE_LAZY_INSTALLS=1
+    HERMES_DISABLE_LAZY_INSTALLS=1 \
+    # TUI precompilata al build (vedi sotto) e node dell'immagine: senza
+    # HERMES_NODE Hermes cerca node tramite il proprio package manager, che
+    # con i lazy install spenti rifiuta.
+    HERMES_TUI_DIR=/opt/hermes-tui \
+    HERMES_NODE=/usr/local/bin/node
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -228,6 +233,15 @@ RUN set -eux; \
 # costruisce benissimo e la dashboard non parte mai — incidente del
 # 2026-10-12. Il `test -d ui-tui/node_modules` sotto è lì per far fallire il
 # build invece di consegnare quel ciclo.
+#
+# La TUI (chat della dashboard e `hermes --tui` via SSH) va compilata QUI.
+# Senza un bundle pronto Hermes la compila al primo uso dentro
+# /opt/hermes-agent/ui-tui/dist, cosa impossibile con /opt di root e i lazy
+# install spenti: `_make_tui_argv` muore con "npm: not installed and lazy
+# installs are disabled" (riprodotto nell'immagine di prova il 2026-10-21; sul
+# Pi la TUI non partiva più dal salto a v0.21.7). Stesso schema dell'immagine
+# ufficiale: `scripts/build/tui.mjs --out`, poi HERMES_TUI_DIR punta lì (ENV
+# sotto e /usr/local/bin/hermes).
 # hadolint ignore=DL3016
 RUN set -eux; \
     npm install --workspace web --workspace ui-tui --include-workspace-root \
@@ -235,7 +249,9 @@ RUN set -eux; \
     npm run build --prefix web; \
     test -f hermes_cli/web_dist/index.html; \
     grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js; \
-    test -d ui-tui/node_modules
+    test -d ui-tui/node_modules; \
+    node scripts/build/tui.mjs --source /opt/hermes-agent --out /opt/hermes-tui; \
+    test -f /opt/hermes-tui/dist/entry.js
 
 COPY rootfs /
 

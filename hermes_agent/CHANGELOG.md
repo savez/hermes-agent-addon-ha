@@ -41,6 +41,23 @@
   - `mcp` resta il default e non cambia: MCP e plugin non sono la stessa
     cosa (solo entità esposte ad Assist e solo intent, contro l'API REST
     completa).
+  - Con `full`, `render_config.py` toglie anche `homeassistant` da
+    `agent.disabled_toolsets` e da `plugins.disabled`: sul Pi la voce c'era,
+    e Hermes applica quella lista ai singoli tool, quindi senza toglierla
+    `full` sarebbe rimasto senza tool `ha_*` (trovato in revisione).
+  - Anche i profili (`profiles/*/config.yaml`) ricevono il plugin con
+    `full`, tramite `render_config.py --profile`, che gestisce solo il
+    plugin. Gli altri vincoli dell'App non sono ancora applicati ai profili:
+    limite noto, da affrontare in una release a parte.
+- **La chat della dashboard e `hermes --tui` non potevano partire.** Senza
+  un bundle pronto Hermes compila la TUI al primo uso dentro
+  `/opt/hermes-agent/ui-tui/dist`, e con i lazy install spenti si fermava su
+  `npm: not installed and lazy installs are disabled`. Sul Pi la TUI non
+  risultava avviata dal 1° ottobre, quindi il problema c'era già con la
+  0.7.x. Ora è compilata al build con `scripts/build/tui.mjs`, come
+  nell'immagine ufficiale, in `/opt/hermes-tui`, e `HERMES_TUI_DIR` e
+  `HERMES_NODE` puntano lì e al node dell'immagine. Verificato nell'immagine
+  di prova: `hermes --tui` in un terminale apre l'interfaccia.
 - **Gateway unico per tutti i profili**: la logica di Hermes è invariata da
   v0.21.7 a v0.22.2. Il `multiplex_profiles: true` esplicito serve ancora,
   perché senza Hermes si rifiuterebbe ancora di multiplexare dentro un
@@ -50,7 +67,7 @@
   `requires-python` e marker di `uv.lock` (Python 3.14), `node-deps.mjs`,
   `pm/lock.json`.
 - **Da verificare sul dispositivo**: build dal Supervisor, Ingress con
-  terminale e pannello laterale (WebSocket), gateway con i profili, MCP, e
+  terminale, chat e pannello laterale (WebSocket), gateway con i profili, MCP, e
   con `full` i tool `ha_*` con il token letto da `.env`. Gateway e dashboard
   sono stati avviati solo nell'immagine di prova, fuori da s6 e senza
   Supervisor.

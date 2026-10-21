@@ -171,3 +171,58 @@ def test_mcp_without_plugins_key_does_not_create_it(tmp_path):
     # chiave assente: se non c'è nulla da aggiungere, non la scriviamo.
     cfg, _ = run_render_config(tmp_path, "mcp", "false")
     assert "plugins" not in cfg
+
+
+def test_full_removes_homeassistant_from_disabled_toolsets(tmp_path):
+    # Caso reale del Pi: `homeassistant` in agent.disabled_toolsets. Hermes
+    # applica quella lista ai singoli tool, quindi senza toglierlo `full`
+    # resterebbe senza nessun tool ha_*.
+    initial = {"agent": {"disabled_toolsets": ["file", "homeassistant", "terminal"]}}
+    cfg, _ = run_render_config(tmp_path, "full", "false", initial_cfg=initial)
+    assert "homeassistant" not in cfg["agent"]["disabled_toolsets"]
+
+
+def test_full_removes_homeassistant_from_disabled_plugins(tmp_path):
+    initial = {"plugins": {"enabled": [], "disabled": ["homeassistant", "other"]}}
+    cfg, _ = run_render_config(tmp_path, "full", "false", initial_cfg=initial)
+    assert cfg["plugins"]["disabled"] == ["other"]
+    assert "homeassistant" in cfg["plugins"]["enabled"]
+
+
+
+def run_profile_mode(tmp_path, ha_access, initial_cfg, plugin_src):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.safe_dump(initial_cfg, sort_keys=False))
+    result = subprocess.run(
+        [sys.executable, str(RENDER_CONFIG), "--profile", str(config_path), ha_access, str(plugin_src)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    with open(config_path, encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def test_profile_mode_links_plugin_only(tmp_path):
+    # Nei profili si gestisce solo il plugin HA: i loro toolset e le altre
+    # chiavi restano come li ha scelti l'utente.
+    src = make_plugin_src(tmp_path)
+    initial = {
+        "platform_toolsets": {"cli": ["web", "code_execution"]},
+        "agent": {"disabled_toolsets": ["homeassistant"]},
+        "plugins": {"enabled": ["disk-cleanup"]},
+    }
+    cfg = run_profile_mode(tmp_path, "full", initial, src)
+    assert (tmp_path / "plugins" / "homeassistant").is_symlink()
+    assert cfg["plugins"]["enabled"] == ["disk-cleanup", "homeassistant"]
+    assert cfg["agent"]["disabled_toolsets"] == []
+    assert cfg["platform_toolsets"] == {"cli": ["web", "code_execution"]}
+    assert "security" not in cfg and "mcp_servers" not in cfg
+
+
+def test_profile_mode_mcp_unlinks_plugin(tmp_path):
+    src = make_plugin_src(tmp_path)
+    run_profile_mode(tmp_path, "full", {"plugins": {"enabled": []}}, src)
+    cfg = run_profile_mode(tmp_path, "mcp", {"plugins": {"enabled": ["homeassistant"]}}, src)
+    assert not (tmp_path / "plugins" / "homeassistant").is_symlink()
+    assert cfg["plugins"]["enabled"] == []
