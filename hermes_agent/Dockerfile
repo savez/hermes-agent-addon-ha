@@ -1,13 +1,11 @@
 # =============================================================================
 # Hermes Agent — App per Home Assistant OS
 #
-# Immagine immutabile per la parte di sistema (nginx, sshd, s6, permessi).
-# `hermes-agent` fa eccezione, deciso dall'utente il 2026-09-25 (T6): niente
-# più tag+SHA pinnati, il build clona sempre l'ultimo tag disponibile, e
-# l'update dalla dashboard nativa di Hermes (`hermes update`) è abilitato —
-# il codice dell'agente può quindi cambiare senza rebuild Docker, in
-# qualunque momento, da chi ha la password della dashboard. Vedi CLAUDE.md
-# regole #1/#4 e DOCS.md → "Modello di sicurezza" per il rischio accettato.
+# Immagine immutabile, `hermes-agent` compreso (dalla 0.8.0): ogni versione
+# dell'App corrisponde a un tag di Hermes e al suo commit, verificato al
+# build. L'update in-place di Hermes è chiuso (`.install_method` + /opt di
+# root): il codice dell'agente cambia solo con una nuova versione dell'App.
+# Vedi CLAUDE.md regole #2/#4 e DOCS.md → "Aggiornare".
 # =============================================================================
 
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-debian:bookworm
@@ -19,24 +17,27 @@ FROM ghcr.io/astral-sh/uv:0.11.6 AS uv
 # Node per la build del frontend della dashboard (`web/`, Vite/TypeScript).
 # hermes-agent pinna il proprio toolchain a Node 26 ovunque (vedi il
 # Dockerfile ufficiale del progetto): stessa scelta qui. Serve anche nello
-# stage runtime, non solo in build: `hermes update` (T6) ricostruisce il
-# frontend dopo un `git pull`, quindi npm/node restano nell'immagine finale.
+# stage runtime, non solo in build: la TUI raggiungibile via SSH gira con
+# node (`ui-tui/dist`, vedi CHANGELOG 0.7.4).
 FROM node:26-bookworm-slim AS node_source
 
 # ─── Stage 1: builder (Python/venv) ────────────────────────────────────────
 FROM ${BUILD_FROM} AS builder
 
 # /bin/sh sull'immagine base Debian è dash, che non supporta
-# `set -o pipefail` (serve sotto, nel comando con la pipe per risolvere
-# l'ultimo tag). bash è già presente nell'immagine base (lo richiedono gli
+# `set -o pipefail` e altre estensioni bash usate nei RUN sotto. bash è
+# già presente nell'immagine base (lo richiedono gli
 # script bashio dello stage runtime).
 SHELL ["/bin/bash", "-c"]
 
-# Nessun ARG di versione/SHA per hermes-agent: si clona sempre l'ultimo tag
-# disponibile al momento del build (scelta esplicita dell'utente — vedi
-# l'intestazione). Il tag risolto viene stampato nel log del build per
-# lasciare traccia di cosa è stato installato quando.
+# Versione di hermes-agent: tag e commit atteso, una coppia per versione
+# dell'App. Se il tag a monte non punta più a HERMES_COMMIT (spostato o
+# manomesso) il build si ferma. Al salto di versione si aggiornano insieme a
+# HA_PLUGIN_SHA (sotto) e si ricontrolla PYTHON_VERSION — checklist in
+# CLAUDE.md.
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
+ARG HERMES_REF=v0.22.2
+ARG HERMES_COMMIT=d923a5eb487a17c0a68801bba9ef0f56c81040a8
 # Extra di hermes-agent installati in fase di build. I provider non elencati
 # qui non potranno essere installati a runtime (lazy install disattivato).
 # OpenAI / OpenRouter / endpoint compatibili OpenAI sono già nel core.
@@ -53,7 +54,8 @@ ARG HERMES_EXTRAS="--extra all --extra anthropic --extra messaging"
 # `requires-python = ">=3.11, <3.15"` ma ha
 # `resolution-markers = ["python_full_version >= '3.14' ..."]`, quindi con la
 # 3.12 il build muore con "The current Python platform is not compatible with
-# the lockfile's supported environments" (incidente del 2026-10-12). Da
+# the lockfile's supported environments" (incidente del 2026-10-12). Il lock
+# della v0.22.2 ha gli stessi marker (verificato il 2026-10-21). Da
 # ricontrollare a ogni salto di versione di hermes-agent.
 ARG PYTHON_VERSION=3.14
 
@@ -74,46 +76,37 @@ RUN apt-get update \
         git \
     && rm -rf /var/lib/apt/lists/*
 
-# Clona l'ultimo tag di release (nessuna verifica di un commit atteso: non
-# c'è più un valore fisso da controllare, per scelta esplicita dell'utente).
-#
-# La fonte è l'**API delle release**, non l'ordinamento dei tag git. Upstream
-# ha cambiato schema di tag — da data (`v2026.9.24`) a semver (`v0.21.7`) — e
-# `--sort=-v:refname` ordina per versione: `2026` batte `0`, quindi i vecchi
-# tag a data avrebbero vinto per sempre e ogni rebuild avrebbe reinstallato
-# `v0.21.5` credendola l'ultima. Il fallback sui tag git resta per quando
-# l'API non risponde (limite non autenticato: 60 richieste/ora per IP) e
-# filtra via proprio i tag a data con un anno a quattro cifre.
-# Storia completa dei commit (niente --depth 1): serve a `hermes update`,
-# che dopo il primo avvio fa `git fetch`/`git merge --ff-only` dentro questa
-# stessa cartella — un clone superficiale (shallow) renderebbe quei fetch
-# più fragili o li farebbe fallire del tutto.
-# `--filter=tree:0` scarica comunque TUTTA la storia dei commit (i fetch di
-# `hermes update` restano sicuri) ma senza gli alberi/blob delle versioni
-# passate dei file, scaricati al bisogno solo per l'ultimo commit (quello di
-# cui abbiamo davvero bisogno per buildare); su questo repo taglia `.git` da
-# ~1.1GB a ~130MB. Verificato empiricamente: `git fetch` dopo il clone
-# funziona ancora normalmente. Diverso da `--depth 1` (che invece taglia la
-# storia dei commit e non garantiva la stessa sicurezza per i fetch futuri).
-# hadolint valuta `pipefail` come POSIX sh anche con SHELL bash impostato
-# sopra (limite noto del suo analizzatore statico, non del Dockerfile: `bash
-# -c 'set -o pipefail; ...'` è valido ed è quello davvero eseguito qui).
-# hadolint ignore=DL4006,SC3040
-RUN set -euxo pipefail; \
-    api_repo="$(echo "${HERMES_REPO}" | sed 's#https://github.com/##; s#\.git$##')"; \
-    tag="$(curl -fsSL --retry 2 "https://api.github.com/repos/${api_repo}/releases/latest" \
-        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)"; \
-    if [ -z "${tag}" ]; then \
-        echo "hermes-agent: API delle release non disponibile, uso i tag git"; \
-        tag="$(git ls-remote --tags --sort=-v:refname "${HERMES_REPO}" \
-            | grep -v '\^{}' | sed 's#.*refs/tags/##' \
-            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vE '^v[0-9]{4}\.' \
-            | head -1)"; \
+# Clona il tag fissato e verifica che punti al commit atteso: un tag spostato
+# a monte ferma il build invece di consegnare un'immagine diversa da quella
+# provata. `--filter=tree:0` tiene la storia dei commit (git describe e le
+# informazioni di versione di Hermes la leggono) senza gli alberi delle
+# versioni passate: `.git` passa da ~1.1GB a ~130MB.
+RUN set -eu; \
+    git clone --filter=tree:0 --branch "${HERMES_REF}" "${HERMES_REPO}" /opt/hermes-agent; \
+    found="$(git -C /opt/hermes-agent rev-parse HEAD)"; \
+    if [ "${found}" != "${HERMES_COMMIT}" ]; then \
+        echo "hermes-agent: ${HERMES_REF} punta a ${found}, atteso ${HERMES_COMMIT}" >&2; \
+        exit 1; \
     fi; \
-    test -n "${tag}"; \
-    echo "hermes-agent: ultimo tag risolto al build = ${tag}"; \
-    git clone --filter=tree:0 --branch "${tag}" "${HERMES_REPO}" /opt/hermes-agent; \
-    git -C /opt/hermes-agent rev-parse HEAD
+    echo "hermes-agent: ${HERMES_REF} = ${found} (verificato)"
+
+# Plugin ufficiale Home Assistant, usato solo con `ha_access: full`
+# (render_config.py lo collega in /data/hermes/plugins). Il toolset
+# `homeassistant` è uscito dal core di Hermes nella v0.21.6 e a monte si
+# installa dal catalogo al primo avvio, ma solo con i lazy install attivi: da
+# noi sono spenti (regola #9), quindi lo mettiamo nell'immagine. Lo SHA è
+# quello di `plugin-catalog/homeassistant.yaml` di HERMES_REF (versione 2.0.1):
+# va riallineato a ogni salto di versione di Hermes. Unica dipendenza aiohttp,
+# già nel venv (controllo di import sotto).
+ARG HA_PLUGIN_REPO=https://github.com/NousResearch/hermes-official-plugins.git
+ARG HA_PLUGIN_SHA=a4e311e433f1470b1fec15434deea6a05e8644eb
+RUN set -eu; \
+    git clone --filter=blob:none --no-checkout "${HA_PLUGIN_REPO}" /tmp/official-plugins; \
+    git -C /tmp/official-plugins checkout -q "${HA_PLUGIN_SHA}" -- homeassistant; \
+    mkdir -p /opt/hermes-ha-plugins; \
+    cp -a /tmp/official-plugins/homeassistant /opt/hermes-ha-plugins/homeassistant; \
+    rm -rf /opt/hermes-ha-plugins/homeassistant/tests /tmp/official-plugins; \
+    test -f /opt/hermes-ha-plugins/homeassistant/plugin.yaml
 
 # Python gestito da uv + venv dell'agent dal lockfile upstream (--frozen:
 # nessuna risoluzione di dipendenze, solo le versioni pinnate in uv.lock).
@@ -145,7 +138,7 @@ RUN set -eux; \
     uv python install "${PYTHON_VERSION}"; \
     uv sync --frozen --python "${PYTHON_VERSION}" ${HERMES_EXTRAS}; \
     uv pip install --python .venv/bin/python numpy pyyaml; \
-    .venv/bin/python -c "import yaml, cryptography, fastapi, uvicorn, numpy"; \
+    .venv/bin/python -c "import yaml, cryptography, fastapi, uvicorn, numpy, aiohttp"; \
     rm -rf /opt/hermes-agent/tests /opt/hermes-agent/website /opt/hermes-agent/docs
 
 # ─── Stage 2: runtime ───────────────────────────────────────────────────────
@@ -163,12 +156,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
-        # git serve A RUNTIME, non solo in build: `hermes update` (il pulsante
-        # della dashboard, regola #1) fa git fetch/pull dentro
-        # /opt/hermes-agent, e l'autostash che porta avanti la nostra patch a
-        # vite.config.ts è anch'esso git. Senza, l'update è semplicemente
-        # impossibile — verificato via SSH sul Pi reale il 2026-09-26 (T7):
-        # `git` non esisteva nell'immagine finale.
+        # git resta nell'immagine finale: l'update in-place è chiuso dalla
+        # 0.8.0, ma Hermes legge le informazioni di versione dal checkout e
+        # può usare git per altre funzioni. Toglierlo richiede prima di
+        # verificare chi lo usa a monte.
         git \
         libatomic1 \
         nginx-light \
@@ -194,6 +185,7 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 
 COPY --from=builder /opt/python        /opt/python
 COPY --from=builder /opt/hermes-agent  /opt/hermes-agent
+COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
 
 # Build del frontend della dashboard (Vite/TypeScript in hermes-agent/web).
 # `--workspace web` (non un `npm install` alla radice, come il Dockerfile
@@ -264,13 +256,29 @@ RUN chmod 0755 \
         /etc/s6-overlay/s6-rc.d/sshd/run \
         /usr/local/bin/hermes \
     && chmod 0644 /usr/local/lib/hermes-ha/render_config.py /etc/ssh/sshd_config \
+    # Update in-place di Hermes chiuso (regola #4). La stamp `docker` è
+    # l'interfaccia prevista a monte per le installazioni gestite da
+    # un'immagine: `detect_install_method` la legge per prima, `hermes update`
+    # rifiuta (update_contract.evaluate_update_admission) e la dashboard
+    # risponde `can_apply: false`. Gli altri effetti sono solo testi di
+    # suggerimento (che citano `docker pull`: per noi vuol dire "aggiorna
+    # l'App"). La barriera vera è la proprietà di root qui sotto.
+    && printf 'docker\n' > /opt/hermes-agent/.install_method \
+    # Con /opt di sola lettura Python non può più salvare i .pyc a runtime:
+    # li compiliamo qui, venv compreso (le librerie di terze parti sono il
+    # grosso degli import). Fatto in questo stage, dopo ogni COPY, perché i
+    # .pyc vengono validati sul mtime dei sorgenti.
+    && /opt/hermes-agent/.venv/bin/python -m compileall -q \
+        -x '/(node_modules|\.git)/' /opt/hermes-agent >/dev/null \
+    # Con il checkout di root, git eseguito da `hermes` rifiuta il repository
+    # ("detected dubious ownership") e Hermes non riesce più a leggere la
+    # propria versione: `hermes --version` diceva `vunknown` (verificato
+    # nell'immagine di prova il 2026-10-21). Il repository è nostro e in sola
+    # lettura: lo dichiariamo sicuro per tutti gli utenti.
+    && git config --system --add safe.directory /opt/hermes-agent \
+    # Tutto /opt è di root e non scrivibile da `hermes`, senza eccezioni.
     && chown -R root:root /opt \
-    && chmod -R go-w /opt \
-    # Unica eccezione a "/opt non scrivibile da hermes" (regola #4, T6):
-    # /opt/hermes-agent deve restare scrivibile perché `hermes update` fa
-    # git pull + reinstall lì dentro. Il resto di /opt (Python gestito da
-    # uv, node/npm) resta di root, non scrivibile.
-    && chown -R hermes:hermes /opt/hermes-agent
+    && chmod -R go-w /opt
 
 # Nessun CMD: l'ENTRYPOINT /init dell'immagine base avvia s6-overlay, che
 # esegue i servizi definiti in /etc/s6-overlay/s6-rc.d.

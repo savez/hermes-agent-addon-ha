@@ -1,6 +1,7 @@
 """Applica i vincoli dell'App al config.yaml di Hermes.
 
 Uso: render_config.py <config.yaml> <ha_access: mcp|full|none> <allow_shell: true|false>
+                        [plugin_src]
 
 Eseguito a ogni avvio. Tocca solo le chiavi elencate qui sotto; tutto il resto
 (modello, provider, preferenze salvate da Web UI o CLI) resta com'è.
@@ -12,6 +13,11 @@ Chiavi gestite:
   gateway.multiplex_profiles    sempre true (un gateway serve tutti i profili)
   update.installs.<id>.channel  sempre stable (mai il branch main)
   mcp_servers.homeassistant     presente se ha_access è mcp o full
+  plugins.enabled               contiene "homeassistant" solo se ha_access è full
+
+Fuori dal file: con ha_access full crea il link
+<cartella del config>/plugins/homeassistant -> plugin_src (default
+/opt/hermes-ha-plugins/homeassistant), altrimenti lo toglie.
 """
 
 import hashlib
@@ -37,9 +43,52 @@ HA_MCP_URL = "http://supervisor/core/api/mcp"
 # del canale di aggiornamento (sha256 del path, primi 16 caratteri).
 INSTALL_ROOT = "/opt/hermes-agent"
 
+# Plugin ufficiale Home Assistant, nell'immagine allo SHA del catalogo di
+# Hermes (Dockerfile, HA_PLUGIN_SHA). Il toolset `homeassistant` non è più nel
+# core di Hermes dalla v0.21.6: senza questo plugin `ha_access: full` non
+# porterebbe nessun tool `ha_*`, perché Hermes lo installerebbe dal catalogo
+# solo con i lazy install attivi (regola #9).
+HA_PLUGIN_NAME = "homeassistant"
+HA_PLUGIN_SRC = "/opt/hermes-ha-plugins/homeassistant"
+
+
+def sync_ha_plugin(config_path: str, ha_access: str, plugin_src: str, cfg: dict) -> None:
+    """Collega o scollega il plugin HA in <dir del config>/plugins e aggiorna
+    plugins.enabled. Il link punta a una cartella di root in sola lettura:
+    l'agente non può modificare il codice del plugin. Hermes riconosce il
+    plugin come installato da `(home / "plugins" / nome).is_dir()`
+    (left_core_migration.plugin_present), che segue i link."""
+    link = os.path.join(os.path.dirname(os.path.abspath(config_path)), "plugins", HA_PLUGIN_NAME)
+    plugins = cfg.get("plugins") or {}
+    enabled = [p for p in (plugins.get("enabled") or []) if p != HA_PLUGIN_NAME]
+
+    if ha_access == "full":
+        os.makedirs(os.path.dirname(link), exist_ok=True)
+        if os.path.islink(link) and os.readlink(link) != plugin_src:
+            os.remove(link)
+        if not os.path.lexists(link):
+            os.symlink(plugin_src, link)
+        if os.path.islink(link):
+            enabled.append(HA_PLUGIN_NAME)
+            print(f"[render_config] plugin {HA_PLUGIN_NAME}: collegato")
+        else:
+            print(f"[render_config] plugin {HA_PLUGIN_NAME}: {link} non è un link dell'App, lasciato com'è")
+    elif os.path.islink(link):
+        os.remove(link)
+        print(f"[render_config] plugin {HA_PLUGIN_NAME}: rimosso")
+    elif os.path.lexists(link):
+        print(f"[render_config] plugin {HA_PLUGIN_NAME}: {link} non è un link dell'App, lasciato com'è")
+
+    # Una lista vuota non è neutra quanto una chiave assente: si scrive solo
+    # se c'era già o se c'è qualcosa da elencare.
+    if enabled or "enabled" in plugins:
+        plugins["enabled"] = enabled
+        cfg["plugins"] = plugins
+
 
 def main() -> None:
     path, ha_access, allow_shell_raw = sys.argv[1:4]
+    plugin_src = sys.argv[4] if len(sys.argv) > 4 else HA_PLUGIN_SRC
     allow_shell = allow_shell_raw.lower() == "true"
 
     cfg = {}
@@ -118,6 +167,9 @@ def main() -> None:
     # ImportError e la nostra patch a vite.config.ts finita in stash.
     # Il record è per-installazione ed è indicizzato da sha256(path)[:16]
     # (verificato: /opt/hermes-agent -> ffad2f5543956651).
+    # Dalla 0.8.0 l'update in-place è chiuso (stamp `.install_method` e /opt
+    # di root, vedi Dockerfile): la chiave resta come seconda difesa, nel caso
+    # la stamp sparisse.
     install_id = hashlib.sha256(INSTALL_ROOT.encode()).hexdigest()[:16]
     update_cfg = cfg.get("update") or {}
     installs = update_cfg.get("installs") or {}
@@ -143,6 +195,9 @@ def main() -> None:
         cfg["mcp_servers"] = mcp_servers
     else:
         cfg.pop("mcp_servers", None)
+
+    # ── plugin Home Assistant (solo full) ───────────────────────────────────
+    sync_ha_plugin(path, ha_access, plugin_src, cfg)
 
     tmp = f"{path}.tmp"
     with open(tmp, "w", encoding="utf-8") as fh:

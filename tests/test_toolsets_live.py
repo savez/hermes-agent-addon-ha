@@ -5,14 +5,14 @@
 in produzione, non risolva mai i toolset UNSAFE quando allow_shell_tools
 è false — indipendentemente da cosa contenga già config.yaml.
 
-Richiede un venv di hermes-agent al commit pinnato nel Dockerfile
-(HERMES_AGENT_SHA in hermes_agent/Dockerfile). Per prepararlo:
+Richiede un venv di hermes-agent alla versione fissata nel Dockerfile
+(HERMES_REF e HERMES_COMMIT in hermes_agent/Dockerfile). Per prepararlo:
 
-    git clone --depth 1 --branch v2026.8.13 \\
+    git clone --depth 1 --branch v0.22.2 \\
         https://github.com/NousResearch/hermes-agent.git /tmp/hermes-agent-src
     cd /tmp/hermes-agent-src
-    test "$(git rev-parse HEAD)" = f80f453ae0679347e38abc917c7f94f717bf96c5
-    uv sync --frozen --python 3.12 --extra all --extra anthropic
+    test "$(git rev-parse HEAD)" = d923a5eb487a17c0a68801bba9ef0f56c81040a8
+    uv sync --frozen --python 3.14 --extra all --extra anthropic --extra messaging
     export HERMES_AGENT_VENV=/tmp/hermes-agent-src/.venv
 
 Senza HERMES_AGENT_VENV il modulo viene saltato: le verifiche statiche in
