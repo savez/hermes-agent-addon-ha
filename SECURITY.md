@@ -9,8 +9,9 @@ installarlo: alcune scelte sono compromessi deliberati, non dimenticanze.
 | Misura | Come |
 |---|---|
 | Un solo ingresso | La dashboard ascolta esclusivamente su `127.0.0.1`. L'unico punto d'accesso è nginx sulla porta di Ingress, con allow-list al solo Supervisor (`allow 172.30.32.2; allow 127.0.0.1; deny all;`). |
-| Nessun processo privilegiato | Agent, dashboard, gateway e sessioni SSH girano come utente `hermes` (uid 1000). `/opt` è di root e non scrivibile, con l'unica eccezione di `/opt/hermes-agent`, necessaria all'aggiornamento in-place. |
+| Nessun processo privilegiato | Agent, dashboard, gateway e sessioni SSH girano come utente `hermes` (uid 1000). `/opt` è interamente di root e non scrivibile, codice di Hermes compreso. |
 | Immagine costruita in locale | Nessuna chiave `image:` nel manifest: il Supervisor costruisce dal `Dockerfile`. Nessun `curl \| sh`, nessun binario scaricato senza verifica. |
+| Versione di Hermes fissata | Ogni versione dell'App installa un tag di Hermes e ne verifica il commit al build: un tag spostato o manomesso a monte ferma il build. L'update in-place dalla dashboard è disattivato. |
 | Nessuna installazione a runtime | `security.allow_lazy_installs: false` e `HERMES_DISABLE_LAZY_INSTALLS=1`. I provider si aggiungono con un extra nel build. Due endpoint della dashboard che aggiravano questo vincolo sono bloccati a livello di reverse proxy. |
 | Segreti fuori dai file di configurazione | Il token di Home Assistant è interpolato dall'ambiente (`${HERMES_HA_TOKEN}`, letto da `/data/hermes/.env`), mai scritto nel `config.yaml` di Hermes. |
 | Default prudenti sull'accesso a HA | `ha_access: mcp` espone solo le entità che dichiari ad Assist, in sola modalità intent. `allow_shell_tools: false` disattiva i toolset `terminal`, `code_execution` e `file`, senza i quali l'agente non può leggere il token di HA dal disco. |
@@ -35,18 +36,17 @@ configurazione della rete domestica la espone. Per spegnerlo basta svuotare
 `ssh_authorized_keys`; l'alternativa prudente è passare da un jump host
 (vedi `hermes_agent/DOCS.md`).
 
-**3. Hermes Agent non è pinnato a un commit verificato.** Ogni build clona
-l'ultimo tag di release: si ottengono le correzioni upstream senza
-intervento, ma un tag manomesso entrerebbe al primo rebuild senza revisione.
-Chi preferisce il controllo può fissare il riferimento nel `Dockerfile` e
-verificarne il commit.
+**3. Le correzioni di Hermes Agent arrivano solo con una nuova versione
+dell'App.** La versione è fissata e l'update in-place è chiuso: una
+correzione di sicurezza pubblicata a monte non arriva da sola, serve una
+release di questo add-on. È il prezzo di non installare mai una versione
+non provata.
 
-**4. L'aggiornamento in-place dalla dashboard è abilitato.** Il codice
-dell'agente può cambiare senza passare da un rebuild, su richiesta di chi
-arriva al pannello. Il canale è forzato su `stable` proprio per limitare il
-danno: senza quella impostazione il default di Hermes segue il branch di
-sviluppo, e un solo click può portare il codice migliaia di commit oltre
-l'ultima release — è già accaduto.
+**4. `ha_access: full` dà all'agente tutta l'API di Home Assistant.** Con il
+plugin ufficiale `homeassistant` l'agente può chiamare qualsiasi servizio su
+qualsiasi entità (serrature, allarmi, automazioni), esclusi i domini che
+eseguono codice o fanno richieste di rete. Insieme alla prompt injection
+(sotto) è la combinazione più delicata: tienilo su `mcp` se non ti serve.
 
 **5. `allow_shell_tools: true` dà all'agente una shell nel container.** È
 disattivato di default. Attivandolo, l'agente può leggere `/data/hermes/.env`

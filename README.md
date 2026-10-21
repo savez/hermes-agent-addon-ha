@@ -126,7 +126,7 @@ Configurazione, opzioni disponibili, accesso SSH e risoluzione dei problemi:
 
 ```
 hermes_agent/            # l'add-on (lo slug con cui appare nello Store)
-  Dockerfile             # build: clona l'ultimo tag di release di hermes-agent
+  Dockerfile             # build: clona hermes-agent al tag fissato e ne verifica il commit
   config.yaml            # manifest: opzioni, Ingress, rete, permessi
   build.yaml             # immagine base per architettura
   DOCS.md                # documentazione utente (mostrata anche dentro HA)

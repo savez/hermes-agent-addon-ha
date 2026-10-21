@@ -31,20 +31,25 @@ proteggono; dove una regola è un compromesso, il compromesso è dichiarato.
 1. **Build sempre locale, nessuna immagine precompilata.** Niente chiave
    `image:` in `config.yaml`: il Supervisor costruisce l'immagine dal
    `Dockerfile` sul dispositivo. Niente `curl | sh`.
-2. **`hermes-agent` non è pinnato a un commit.** Il build clona l'**ultimo
-   tag di release** risolto al momento della costruzione. È un compromesso
-   dichiarato: si ottengono le correzioni upstream senza intervento, si
-   accetta che un tag manomesso entrerebbe al primo rebuild senza revisione.
-   Chi preferisce il controllo può fissare `HERMES_REF` a un tag e
-   verificarne il commit.
+2. **Una versione dell'App = una versione di `hermes-agent`.** Il
+   `Dockerfile` fissa `HERMES_REF` (tag) e `HERMES_COMMIT`, e il build si
+   ferma se il tag non punta a quel commit. Dalla 0.8.0: seguire in
+   automatico l'ultima release non portava correzioni gratis, portava
+   rotture non verificate (il salto a v0.21.7 ha richiesto tre release,
+   0.7.2–0.7.4). Il compromesso dichiarato ora è l'opposto: le correzioni a
+   monte, anche di sicurezza, arrivano solo con una nuova versione
+   dell'App. Al salto di versione segui la checklist in fondo.
 3. **Il canale di aggiornamento è `stable`**, imposto da `render_config.py`.
-   Per un'installazione da sorgente il default di Hermes è seguire il branch
-   di sviluppo: un Update reale ha portato il checkout migliaia di commit
-   dopo l'ultimo tag, rompendo l'assistente. Non rimuovere quella chiave.
+   Con l'update in-place chiuso (regola 4) è una seconda difesa: per
+   un'installazione da sorgente il default di Hermes è seguire il branch di
+   sviluppo, e un Update reale ha portato il checkout migliaia di commit dopo
+   l'ultimo tag, rompendo l'assistente. Non rimuovere quella chiave.
 4. **Agent, dashboard e sessioni SSH girano come utente non privilegiato**
-   (`hermes`, uid 1000), mai root. `/opt` è di root e non scrivibile,
-   **eccetto `/opt/hermes-agent`**, che deve restare scrivibile perché
-   l'aggiornamento in-place di Hermes lavora lì. Non estendere l'eccezione.
+   (`hermes`, uid 1000), mai root. `/opt` è interamente di root e non
+   scrivibile, `/opt/hermes-agent` compreso. L'update in-place di Hermes è
+   chiuso: la stamp `/opt/hermes-agent/.install_method` (`docker`) lo fa
+   rifiutare a Hermes stesso, la proprietà di root lo rende impossibile. I
+   `.pyc` sono compilati al build. Non riaprire `/opt` in scrittura.
 5. **L'unico ingresso è nginx sulla porta di Ingress**, con allow-list al
    solo Supervisor (`allow 172.30.32.2; allow 127.0.0.1; deny all;`). La
    dashboard ascolta esclusivamente su `127.0.0.1`. Ingress è preferito a una
@@ -71,14 +76,23 @@ proteggono; dove una regola è un compromesso, il compromesso è dichiarato.
    `allow_shell_tools: false`. Con i toolset `terminal`, `code_execution` e
    `file` disattivati l'agente non può leggere il token di HA da
    `/data/hermes/.env`. La modalità `full` aggiunge l'API REST completa di
-   Core — qualsiasi servizio, qualsiasi entità — e va scelta sapendolo.
+   Core — qualsiasi servizio, qualsiasi entità — e va scelta sapendolo. Dalla
+   v0.21.6 di Hermes quell'accesso passa dal plugin ufficiale
+   `homeassistant`, incluso nell'immagine in `/opt/hermes-ha-plugins` allo
+   SHA del catalogo e collegato da `render_config.py` solo in `full`. Il
+   plugin rifiuta da sé i domini che eseguono codice o fanno richieste di
+   rete (`shell_command`, `command_line`, `python_script`, `pyscript`,
+   `hassio`, `rest_command`).
 9. **Nessuna installazione di pacchetti a runtime**
    (`security.allow_lazy_installs: false`, `HERMES_DISABLE_LAZY_INSTALLS=1`).
    È il prezzo dell'immagine immutabile: i provider si aggiungono con l'ARG
    `HERMES_EXTRAS` e un rebuild. Diverse funzioni di Hermes contano invece
    sul "lazy install" (i canali di messaggistica sono nell'extra `messaging`,
    escluso da `all` a monte): se qualcosa risulta "requirements not met", la
-   risposta è un extra in più, non allentare questa regola.
+   risposta è un extra in più, non allentare questa regola. Lo stesso vale
+   per le funzioni uscite dal core verso il catalogo dei plugin: si mettono
+   nell'immagine a uno SHA fissato (com'è fatto per `homeassistant`), non si
+   lasciano installare a Hermes a runtime.
 10. **Il token di HA non compare nei file di configurazione**: l'MCP usa
     `${HERMES_HA_TOKEN}`, che Hermes interpola dall'ambiente leggendo
     `/data/hermes/.env`. Il token del Supervisor cambia a ogni avvio, quindi
@@ -99,6 +113,25 @@ proteggono; dove una regola è un compromesso, il compromesso è dichiarato.
     profili, per questo `render_config.py` dichiara
     `gateway.multiplex_profiles: true` — lecito qui perché il gateway è
     garantito unico.
+
+## Salto di versione di Hermes
+
+Da fare tutto insieme, in una nuova versione dell'App:
+
+1. `HERMES_REF` e `HERMES_COMMIT` nel `Dockerfile` (commit con
+   `git rev-parse <tag>^{commit}`), e la docstring di
+   `tests/test_toolsets_live.py`.
+2. `HA_PLUGIN_SHA`: lo SHA di `plugin-catalog/homeassistant.yaml` al nuovo
+   tag.
+3. `resolution-markers` di `uv.lock` contro `PYTHON_VERSION`.
+4. Diff fra il vecchio e il nuovo tag dei punti di contatto: `web/vite.config.ts`
+   (patch di Ingress), workspace e `engines` di `package.json`, extra in
+   `pyproject.toml`, `scripts/build/node-deps.mjs`, `pm/lock.json`,
+   `hermes_cli/gateway_multiplex_mode.py`, `hermes_cli/update_contract.py`,
+   `hermes_cli/web_server.py`. Più le note di rilascio, cercando funzioni
+   uscite dal core.
+5. Build arm64 in locale, poi verifica sul dispositivo con
+   `docs/CHECKLIST-PI.md`.
 
 ## Convenzioni
 

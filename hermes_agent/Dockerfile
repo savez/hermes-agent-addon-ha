@@ -117,8 +117,8 @@ RUN set -eu; \
 # dipendenza opzionale del provider di memoria `holographic`, che senza di
 # essa degrada **in silenzio** a sola ricerca full-text — `_HAS_NUMPY=False`
 # azzera il peso HRR e fa ricadere `probe`, `related` e `reason` su FTS5
-# (plugins/memory/holographic/retrieval.py). Installarla a runtime non regge:
-# `hermes update` esegue `uv sync`, che rimuove quanto il lock non conosce.
+# (plugins/memory/holographic/retrieval.py). Installarla a runtime non è
+# possibile (regola #9, e il venv è di root).
 # Costa 68 MB; va nel venv dell'agent, non in un venv separato, perché è
 # quello da cui Hermes importa.
 #
@@ -195,8 +195,7 @@ COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
 # addon nativo che richiede un python3 di sistema per compilare (non
 # presente in questa immagine, e comunque inutile: il dashboard usa
 # ptyprocess Python lato backend, xterm.js lato frontend — niente PTY di
-# Node qui). node_modules resta nell'immagine: un futuro `hermes update` lo
-# riusa per il rebuild.
+# Node qui). node_modules resta nell'immagine: serve alla TUI di `ui-tui`.
 WORKDIR /opt/hermes-agent
 
 # Fix per le pagine che restavano vuote sotto Ingress (System/Chat — vedi
@@ -207,15 +206,10 @@ WORKDIR /opt/hermes-agent
 # compilati. `patches/vite-base-path-runtime.snippet` aggiunge un
 # `experimental.renderBuiltUrl` che calcola quell'URL a runtime nel browser
 # usando `window.__HERMES_BASE_PATH__` (variabile che hermes-agent inietta
-# già correttamente ad ogni richiesta). Applicata con `sed`, NON committata:
-# `hermes update` fa autostash di ogni modifica non committata prima del
-# `git pull` e la riapplica dopo (comportamento nativo, non nostro — vedi
-# hermes_cli/update_cmd_stash.py), quindi la patch sopravvive agli
-# aggiornamenti dalla dashboard senza bisogno di un rebuild Docker. Se una
-# futura release upstream modificasse proprio quelle righe di
-# vite.config.ts, il solo rischio è che l'autostash vada in conflitto: in
-# quel caso hermes-agent lascia la patch (non il resto dell'update) parcheggiata
-# nello stash e il codice si aggiorna comunque — vedi DOCS.md.
+# già correttamente ad ogni richiesta). Applicata con `sed` al build: al salto
+# di versione di Hermes va controllato che `web/vite.config.ts` non sia
+# cambiato a monte (checklist in CLAUDE.md); il `grep -q` sotto ferma il
+# build se l'ancora non c'è più.
 COPY patches/vite-base-path-runtime.snippet /tmp/vite-base-path-runtime.snippet
 RUN set -eux; \
     sed -i '/^export default defineConfig({$/r /tmp/vite-base-path-runtime.snippet' web/vite.config.ts; \
