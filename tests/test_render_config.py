@@ -122,6 +122,27 @@ def test_mcp_header_uses_placeholder_and_never_a_real_token(tmp_path):
     assert "SUPERVISOR_TOKEN" not in raw
 
 
+def test_mcp_user_keys_survive_restart(tmp_path):
+    # `enabled: false` (o un filtro sui tool) messo dall'utente sulla voce MCP
+    # di HA deve sopravvivere al riavvio: l'App impone solo url e token.
+    initial = {
+        "mcp_servers": {
+            "homeassistant": {
+                "url": "http://old",
+                "enabled": False,
+                "tools": {"exclude": ["GetDateTime"]},
+                "headers": {"Authorization": "Bearer stale", "X-Extra": "1"},
+            }
+        }
+    }
+    cfg, _ = run_render_config(tmp_path, "full", "false", initial_cfg=initial)
+    entry = cfg["mcp_servers"]["homeassistant"]
+    assert entry["enabled"] is False
+    assert entry["tools"] == {"exclude": ["GetDateTime"]}
+    assert entry["url"] == "http://supervisor/core/api/mcp"
+    assert entry["headers"] == {"Authorization": "Bearer ${HERMES_HA_TOKEN}", "X-Extra": "1"}
+
+
 def test_full_links_ha_plugin(tmp_path):
     src = make_plugin_src(tmp_path)
     cfg, _ = run_render_config(tmp_path, "full", "false", plugin_src=src)
