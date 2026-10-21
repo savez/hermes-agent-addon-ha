@@ -3,6 +3,10 @@
 export HERMES_HOME="${HERMES_HOME:-/data/hermes}"
 export HERMES_WRITE_SAFE_ROOT="${HERMES_WRITE_SAFE_ROOT:-/data/hermes}"
 export HERMES_DISABLE_LAZY_INSTALLS=1
+# Le sessioni SSH non ereditano l'ENV del container: stessi valori del
+# Dockerfile per la TUI precompilata.
+export HERMES_TUI_DIR="${HERMES_TUI_DIR:-/opt/hermes-tui}"
+export HERMES_NODE="${HERMES_NODE:-/usr/local/bin/node}"
 
 # Da root (es. docker exec) scende a hermes, altrimenti i file creati in
 # /data/hermes diventerebbero di root e la Web UI non potrebbe scriverli.

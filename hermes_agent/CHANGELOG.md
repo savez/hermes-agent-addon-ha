@@ -1,5 +1,91 @@
 # Changelog
 
+## 0.8.1
+
+**Chat della dashboard e TUI di nuovo funzionanti; plugin Home Assistant
+anche nei profili.** Correzioni dalla revisione finale della 0.8.0, che sul
+Pi era già installata senza di esse.
+
+- **La chat della dashboard e `hermes --tui` non potevano partire.** Senza
+  un bundle pronto Hermes compila la TUI al primo uso dentro
+  `/opt/hermes-agent/ui-tui/dist`, e con i lazy install spenti si fermava su
+  `npm: not installed and lazy installs are disabled`. Sul Pi la TUI non
+  risultava avviata dal 1° ottobre, quindi il problema c'era già con la
+  0.7.x. Ora è compilata al build con `scripts/build/tui.mjs`, come
+  nell'immagine ufficiale, in `/opt/hermes-tui`; `HERMES_TUI_DIR` e
+  `HERMES_NODE` puntano lì e al node dell'immagine (anche per le sessioni
+  SSH, tramite `/usr/local/bin/hermes`). Verificato nell'immagine di prova:
+  `hermes --tui` in un terminale apre l'interfaccia.
+- **Plugin HA anche nei profili.** Con `full` i profili
+  (`profiles/*/config.yaml`) ricevono `HASS_TOKEN` ma non il plugin, e
+  Hermes avvisava a ogni avvio che Home Assistant è uscito dal core. Ora
+  `init-hermes.sh` chiama `render_config.py --profile`, che gestisce solo
+  il plugin. Gli altri vincoli dell'App non sono ancora applicati ai
+  profili: limite noto, da affrontare a parte.
+- **Con `full`, `homeassistant` esce anche da `agent.disabled_toolsets` e da
+  `plugins.disabled`.** Hermes applica quelle liste ai singoli tool e ai
+  plugin: con la voce presente `full` resterebbe senza tool `ha_*`. Sul Pi
+  non c'era (la riga letta in fase di analisi era in `skills.disabled`), ma
+  una configurazione che la contiene non deve rompere `full`.
+
+## 0.8.0
+
+**Hermes Agent v0.22.2, fissato. L'update dalla dashboard è chiuso.
+`ha_access: full` torna ad avere i tool di Home Assistant.**
+
+- **Una versione dell'App = una versione di Hermes.** Il `Dockerfile` fissa
+  `HERMES_REF=v0.22.2` e `HERMES_COMMIT=d923a5eb…`, e il build si ferma se il
+  tag a monte non punta più a quel commit. Provato in locale con un commit
+  sbagliato: `hermes-agent: v0.22.2 punta a d923a5eb…, atteso 0000…`.
+  Perché: fino alla 0.7.x ogni build prendeva l'ultima release, ma il salto a
+  v0.21.7 ha richiesto tre release di correzioni (0.7.2–0.7.4). Seguire in
+  automatico l'ultima release non portava correzioni gratis, portava rotture
+  non verificate.
+- **Update in-place chiuso.** `/opt/hermes-agent/.install_method` = `docker`,
+  il meccanismo che Hermes prevede per le immagini: `hermes update` rifiuta e
+  la dashboard non offre più di applicare l'aggiornamento. `/opt` torna
+  interamente di root, quindi l'eccezione della regola 4 sparisce. I `.pyc`
+  sono compilati al build, perché a runtime Python non può più scriverli.
+  Verificato nell'immagine di prova: `touch` come `hermes` → `Permission
+  denied`; `hermes update` → rifiutato, commit invariato.
+- **git e il checkout di root.** Con `/opt/hermes-agent` di root, git
+  eseguito da `hermes` rifiutava il repository ("detected dubious ownership")
+  e `hermes --version` diceva `vunknown`. Corretto con
+  `safe.directory=/opt/hermes-agent` a livello di sistema; ora dice
+  `v0.22.2`.
+- **`ha_access: full` era rotto dalla 0.7.2.** Il toolset `homeassistant` è
+  uscito dal core di Hermes nella v0.21.6 per diventare un plugin di
+  catalogo, che Hermes installa al primo avvio solo con i lazy install
+  attivi. Da noi sono spenti (regola 9), quindi con `full` l'agente non aveva
+  nessun tool `ha_*`. Verificato sul Pi con v0.21.7 e un `HERMES_HOME`
+  temporaneo: toolset `homeassistant` → nessun tool.
+  - **Fix**: il plugin ufficiale (`hermes-official-plugins`, SHA
+    `a4e311e4…` del catalogo, versione 2.0.1) è nell'immagine in
+    `/opt/hermes-ha-plugins`, di root. `render_config.py` lo collega in
+    `/data/hermes/plugins` e lo abilita solo con `full`, e lo scollega
+    altrimenti. Nell'immagine di prova: con `full` sono attivi
+    `ha_list_entities`, `ha_get_state`, `ha_list_services` e
+    `ha_call_service`; con `mcp` nessuno.
+  - `mcp` resta il default e non cambia: MCP e plugin non sono la stessa
+    cosa (solo entità esposte ad Assist e solo intent, contro l'API REST
+    completa).
+- **Gateway unico per tutti i profili**: la logica di Hermes è invariata da
+  v0.21.7 a v0.22.2. Il `multiplex_profiles: true` esplicito serve ancora,
+  perché senza Hermes si rifiuterebbe ancora di multiplexare dentro un
+  container s6.
+- **Punti di contatto invariati** tra v0.21.7 e v0.22.2 (controllati sul
+  codice): `web/vite.config.ts`, workspace ed `engines` npm, extra Python,
+  `requires-python` e marker di `uv.lock` (Python 3.14), `node-deps.mjs`,
+  `pm/lock.json`.
+- **Verificato sul Pi** (2026-10-21, via SSH): Hermes v0.22.2 al commit
+  atteso, `hermes --version` corretto; `/opt/hermes-agent` di root e
+  `hermes update` rifiutato; gateway e dashboard su (HTTP 200), multiplex e
+  cron sui due profili; MCP con 27 tool. Con `ha_access: full` sul profilo
+  principale i quattro tool `ha_*` sono attivi, con `HASS_TOKEN` letto da
+  `.env` (tolto apposta dall'ambiente del processo di prova).
+- **Rimasto aperto, corretto nella 0.8.1**: TUI e chat della dashboard,
+  plugin HA nei profili.
+
 ## 0.7.4
 
 **La dashboard ricostruiva il frontend a ogni avvio e falliva in ciclo:

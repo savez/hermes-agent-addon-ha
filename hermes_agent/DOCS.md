@@ -24,11 +24,10 @@ dipendenze a runtime senza passare dal controllo che blocca gli
 `pip`/`npm install` non richiesti — sono bloccati a livello di rete (vedi
 "Modello di sicurezza" sotto), non configurabili da questa App.
 
-`hermes-agent` **non è pinnato a una versione fissa** (scelta deliberata,
-vedi "Aggiornare" sotto): ogni build prende l'ultimo tag disponibile su
-GitHub, e il pulsante "Update" della dashboard è abilitato. Questo è
-diverso da un'immagine davvero immutabile — leggi "Modello di sicurezza"
-prima di installare se questo ti preoccupa.
+Ogni versione dell'App installa **una versione fissa di `hermes-agent`**
+(dalla 0.8.0: v0.22.2), verificata al build sul suo commit. Il pulsante
+"Update" della dashboard è disattivato: Hermes si aggiorna aggiornando
+l'App (vedi "Aggiornare" sotto).
 
 **La dashboard non ha una propria password** (scelta deliberata, vedi
 "Modello di sicurezza" sotto): l'unica barriera per arrivarci è il login
@@ -41,11 +40,10 @@ di Home Assistant stesso, dietro cui sta il pannello Ingress.
 - Spazio disco: l'immagine buildata pesa **~850 MB** (misurato con
   `docker inspect` su Apple Silicon via Colima, build nativo arm64). Il
   peso viene soprattutto da Node.js/npm, che servono a costruire il
-  frontend della dashboard e restano nell'immagine perché un
-  aggiornamento in-place lo ricostruisce. Il clone di `hermes-agent` usa
-  `--filter=tree:0`: scarica tutta la storia dei commit — necessaria
-  perché l'aggiornamento in-place fa `git fetch` lì dentro — senza gli
-  alberi delle versioni passate, il che da solo evita circa 900 MB.
+  frontend della dashboard e restano nell'immagine perché la CLI
+  raggiungibile via SSH gira con Node. Il clone di `hermes-agent` usa
+  `--filter=tree:0`: tiene la storia dei commit senza gli alberi delle
+  versioni passate, il che da solo evita circa 900 MB.
   Considera comunque che i dati dell'agente in `/data` crescono con l'uso
   (cache dei modelli, sessioni, memoria, un profilo per ogni bot):
   tieniti **qualche GB libero**.
@@ -114,9 +112,18 @@ Per far vedere entità di Home Assistant all'agente:
 3. Imposta `ha_access`:
    - `mcp` (default): l'agente vede solo le entità esposte ad Assist, via
      l'integrazione MCP Server;
-   - `full`: l'agente ha accesso REST completo a Core, **indipendentemente**
-     da cosa hai esposto ad Assist — usalo solo se ti serve davvero
-     l'automazione completa e ne accetti il rischio;
+   - `full`: oltre a MCP, l'agente ha accesso REST completo a Core,
+     **indipendentemente** da cosa hai esposto ad Assist, tramite il plugin
+     ufficiale `homeassistant` di Hermes (incluso nell'App dalla 0.8.0):
+     `ha_list_entities`, `ha_get_state`, `ha_list_services`,
+     `ha_call_service`. Può chiamare qualsiasi servizio su qualsiasi entità —
+     serrature, allarmi, tapparelle, automazioni — tranne i domini che
+     eseguono codice o fanno richieste di rete (`shell_command`,
+     `command_line`, `python_script`, `pyscript`, `hassio`,
+     `rest_command`), che il plugin rifiuta. Usalo solo se ti serve davvero
+     l'automazione completa e ne accetti il rischio: ricorda che gli ordini
+     possono arrivare anche dai canali di messaggistica, e che l'agente legge
+     contenuti dal web;
    - `none`: l'agente non vede nulla di HA.
 
 ## CLI via SSH
@@ -199,56 +206,35 @@ Due cose da ricordare, imparate sul campo:
 
 ## Aggiornare
 
-`hermes-agent` non è pinnato a un commit verificato: ci sono **due modi
-distinti e indipendenti** per aggiornarlo, con garanzie diverse.
+Hermes si aggiorna **solo aggiornando l'App**. Ogni versione dell'App
+corrisponde a una versione di `hermes-agent` (tag + commit, verificati al
+build): quando esce una versione nuova dell'App, Store → ⋮ → **"Controlla
+aggiornamenti"** → **Aggiorna**. Il tag installato è stampato nel log del
+build (Impostazioni → Sistema → Log → Supervisor).
 
-> [!IMPORTANT]
-> L'add-on forza il canale di aggiornamento su **`stable`**. Non toglierlo:
-> per un'installazione da sorgente il default di Hermes è seguire il branch
-> di **sviluppo**, e un solo click su "Update" può portare il codice
-> migliaia di commit oltre l'ultima release. È successo davvero, e
-> l'assistente non è più partito.
+Il pulsante "Update" della dashboard di Hermes è **disattivato**: Hermes
+risponde che gli aggiornamenti si fanno fuori dalla dashboard, e da riga di
+comando `hermes update` rifiuta citando `docker pull`. Per questa App
+`docker pull` vuol dire "aggiorna l'App". Anche se qualcuno ci provasse,
+`/opt/hermes-agent` è di root e non scrivibile.
 
-**1. Rebuild dell'App (Store → ⋮ → "Controlla aggiornamenti" → Aggiorna)**
-— il Dockerfile clona sempre l'**ultimo tag disponibile** su GitHub al
-momento del build, senza verificare un commit atteso. Non c'è più un passo
-manuale di trovare/verificare un SHA: ogni rebuild prende semplicemente
-quello che sta in cima ai tag di `NousResearch/hermes-agent` in quel
-momento. Il tag scelto viene stampato nel log del build (visibile in
-Impostazioni → Sistema → Log → Supervisor), quindi puoi sempre controllare
-dopo cosa è stato installato.
+Perché così: fino alla 0.7.x il build prendeva l'ultima release e il
+pulsante era attivo. Ogni salto di versione di Hermes ha però richiesto
+correzioni all'App (per la v0.21.7 tre release, 0.7.2–0.7.4), e un Update
+dalla dashboard poteva portare una versione mai provata qui. Il prezzo della
+scelta: le correzioni di Hermes, anche di sicurezza, arrivano solo con una
+nuova versione dell'App.
 
-**2. Pulsante "Update" dentro la dashboard stessa** — applica
-l'aggiornamento **sul momento**, senza rebuild Docker, senza che tu clicchi
-nulla in HA e **senza che compaia nulla nei log del Supervisor**. Fa `git
-pull` + reinstall dentro `/opt/hermes-agent` (per questo quella cartella,
-solo quella, è scrivibile dall'utente `hermes` — vedi "Modello di
-sicurezza"). Il frontend viene ricostruito automaticamente se serve (Node/
-npm restano nell'immagine apposta per questo).
-
-**Conseguenza pratica**: con la via 2, "quale versione di hermes-agent sta
-girando" non è più qualcosa che puoi dedurre dal Dockerfile o dal log del
-Supervisor — può essere cambiata da chiunque arrivi al pannello Ingress
-(vedi "Modello di sicurezza": non serve nemmeno una password dedicata),
-in qualunque momento. Se qualcosa si rompe dopo un aggiornamento e non hai
-appena fatto un rebuild da HA, il primo posto da controllare è la
-dashboard stessa (pagina di stato/aggiornamento), non i log dell'App.
-
-**Se un aggiornamento rompe qualcosa**, il rimedio è **ricostruire
-l'add-on** (Store → ⋮ → Controlla aggiornamenti → Aggiorna, oppure
-Ricostruisci). Il build riclona l'ultimo tag di release e riapplica le
-patch al frontend, **senza toccare `/data`**: profili, memoria, cron,
-configurazioni e credenziali restano. È la via di ritorno da uno stato
+**Ricostruisci** (Store → ⋮ → Ricostruisci) rifà la stessa immagine, con la
+stessa versione di Hermes, **senza toccare `/data`**: profili, memoria,
+cron, configurazioni e credenziali restano. È la via di ritorno da uno stato
 incoerente.
 
 Nota per chi contribuisce: questo add-on applica al frontend di Hermes una
 piccola patch in fase di build (`patches/vite-base-path-runtime.snippet`),
-necessaria perché la dashboard funzioni sotto il sotto-path di Ingress.
-Non è committata nel checkout: l'aggiornamento in-place di Hermes la mette
-da parte in `git stash` e la ripristina da sé, ma se upstream tocca lo
-stesso file il ripristino va in conflitto e la patch resta parcheggiata.
-In quel caso le pagine interne della dashboard tornano bianche al primo
-rebuild del frontend, e si risolve ricostruendo l'add-on.
+necessaria perché la dashboard funzioni sotto il sotto-path di Ingress. Al
+salto di versione di Hermes va controllato che `web/vite.config.ts` non sia
+cambiato a monte (checklist in `CLAUDE.md`).
 
 Per aggiungere un provider LLM non incluso nel build attuale: aggiungi il
 suo extra a `HERMES_EXTRAS` nel Dockerfile e rifai il build — non si
@@ -278,12 +264,10 @@ installa nulla a runtime per gli altri toolset (`security.allow_lazy_installs: f
   chiavi in `.env`, incluso `HERMES_HA_TOKEN` — non serve nemmeno aprire
   il terminale. Stesso confine di fiducia dei due punti sopra: chi arriva
   al pannello ha comunque accesso equivalente.
-- **L'aggiornamento di `hermes-agent` non è più garantito dal build
-  Docker** (vedi "Aggiornare"): il pulsante "Update" della dashboard è
-  volutamente abilitato, e ogni rebuild prende l'ultimo tag disponibile
-  senza verificarne il commit. Un tag manomesso o una release compromessa
-  upstream entrerebbero senza revisione. Scelta esplicita dell'utente di
-  questo progetto, non un default.
+- **Le correzioni di `hermes-agent` arrivano solo con una nuova versione
+  dell'App** (vedi "Aggiornare"): la versione è fissata e verificata sul
+  commit, e l'update dalla dashboard è disattivato. In cambio, un tag
+  spostato o manomesso a monte ferma il build invece di entrare.
 - **Provider di memoria cloud esterni e il bridge WhatsApp della
   dashboard non funzionano** in questa App: gli endpoint che li
   installerebbero a runtime (`npm install`, script di setup con
@@ -341,14 +325,10 @@ installa nulla a runtime per gli altri toolset (`security.allow_lazy_installs: f
   scaricarli direttamente da Home Assistant Core invece che dal nostro
   addon, ottiene 404 e la pagina non si carica. `patches/vite-base-path-runtime.snippet`
   corregge questo calcolando l'URL a runtime dal browser invece che in
-  fase di build. Se il problema si ripresenta dopo un `hermes update` (il
-  pulsante della dashboard): quasi certamente una futura release upstream
-  ha modificato proprio `web/vite.config.ts` in un punto che va in
-  conflitto con la nostra patch non committata — `hermes update` in quel
-  caso aggiorna comunque il codice ma lascia la patch da parte (in
-  `git stash`, la trovi con `git stash list` dentro `/opt/hermes-agent`);
-  va ripristinata rifacendo un rebuild Docker completo dell'App (non basta
-  premere di nuovo "Update").
+  fase di build. Se il problema si ripresenta dopo un aggiornamento
+  dell'App, quasi certamente la nuova versione di Hermes ha modificato
+  `web/vite.config.ts` in un punto che va in conflitto con la patch: va
+  segnalato, non si risolve dal dispositivo.
 - **Le risposte dell'agente arrivano tutte insieme invece che in
   streaming**: nginx disattiva già il buffering verso la dashboard
   (`proxy_buffering off` in `nginx.conf`). Se il problema persiste, prova
@@ -362,11 +342,15 @@ installa nulla a runtime per gli altri toolset (`security.allow_lazy_installs: f
   ancora un fallback pronto in questa versione dell'App (pianificato:
   opzione `ha_token_override` per usare un long-lived token verso
   `http://homeassistant:8123/api/mcp` direttamente).
-- **`PermissionError` nei log** riferiti a un path sotto `/opt` diverso da
-  `/opt/hermes-agent`: agent o dashboard stanno cercando di scrivere in
-  una directory d'installazione non pensata per essere scrivibile. Non
-  estendere i permessi scrivibili oltre `/opt/hermes-agent`: va trovata la
-  variabile d'ambiente giusta per ridirigere quel path sotto `/data`.
+- **`PermissionError` nei log** riferiti a un path sotto `/opt`: agent o
+  dashboard stanno cercando di scrivere in una directory d'installazione,
+  che dalla 0.8.0 è tutta di sola lettura. Non rendere scrivibile `/opt`:
+  va trovata la variabile d'ambiente giusta per ridirigere quel path sotto
+  `/data`.
+- **Con `ha_access: full` i tool `ha_*` non compaiono**: nel log dell'App,
+  all'avvio, deve esserci `[render_config] plugin homeassistant: collegato`.
+  Se dice "non è un link dell'App", in `/data/hermes/plugins/homeassistant`
+  c'è una cartella installata a mano: toglila e riavvia l'App.
 - **Build fallito, `nginx-light` non trovato**: dipende dalla revisione
   dell'immagine base HA OS; nel Dockerfile può essere sostituito con
   `nginx` (pacchetto completo, più pesante).
