@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.8.1
+
+**Chat della dashboard e TUI di nuovo funzionanti; plugin Home Assistant
+anche nei profili.** Correzioni dalla revisione finale della 0.8.0, che sul
+Pi era già installata senza di esse.
+
+- **La chat della dashboard e `hermes --tui` non potevano partire.** Senza
+  un bundle pronto Hermes compila la TUI al primo uso dentro
+  `/opt/hermes-agent/ui-tui/dist`, e con i lazy install spenti si fermava su
+  `npm: not installed and lazy installs are disabled`. Sul Pi la TUI non
+  risultava avviata dal 1° ottobre, quindi il problema c'era già con la
+  0.7.x. Ora è compilata al build con `scripts/build/tui.mjs`, come
+  nell'immagine ufficiale, in `/opt/hermes-tui`; `HERMES_TUI_DIR` e
+  `HERMES_NODE` puntano lì e al node dell'immagine (anche per le sessioni
+  SSH, tramite `/usr/local/bin/hermes`). Verificato nell'immagine di prova:
+  `hermes --tui` in un terminale apre l'interfaccia.
+- **Plugin HA anche nei profili.** Con `full` i profili
+  (`profiles/*/config.yaml`) ricevono `HASS_TOKEN` ma non il plugin, e
+  Hermes avvisava a ogni avvio che Home Assistant è uscito dal core. Ora
+  `init-hermes.sh` chiama `render_config.py --profile`, che gestisce solo
+  il plugin. Gli altri vincoli dell'App non sono ancora applicati ai
+  profili: limite noto, da affrontare a parte.
+- **Con `full`, `homeassistant` esce anche da `agent.disabled_toolsets` e da
+  `plugins.disabled`.** Hermes applica quelle liste ai singoli tool e ai
+  plugin: con la voce presente `full` resterebbe senza tool `ha_*`. Sul Pi
+  non c'era (la riga letta in fase di analisi era in `skills.disabled`), ma
+  una configurazione che la contiene non deve rompere `full`.
+
 ## 0.8.0
 
 **Hermes Agent v0.22.2, fissato. L'update dalla dashboard è chiuso.
@@ -41,23 +69,6 @@
   - `mcp` resta il default e non cambia: MCP e plugin non sono la stessa
     cosa (solo entità esposte ad Assist e solo intent, contro l'API REST
     completa).
-  - Con `full`, `render_config.py` toglie anche `homeassistant` da
-    `agent.disabled_toolsets` e da `plugins.disabled`: sul Pi la voce c'era,
-    e Hermes applica quella lista ai singoli tool, quindi senza toglierla
-    `full` sarebbe rimasto senza tool `ha_*` (trovato in revisione).
-  - Anche i profili (`profiles/*/config.yaml`) ricevono il plugin con
-    `full`, tramite `render_config.py --profile`, che gestisce solo il
-    plugin. Gli altri vincoli dell'App non sono ancora applicati ai profili:
-    limite noto, da affrontare in una release a parte.
-- **La chat della dashboard e `hermes --tui` non potevano partire.** Senza
-  un bundle pronto Hermes compila la TUI al primo uso dentro
-  `/opt/hermes-agent/ui-tui/dist`, e con i lazy install spenti si fermava su
-  `npm: not installed and lazy installs are disabled`. Sul Pi la TUI non
-  risultava avviata dal 1° ottobre, quindi il problema c'era già con la
-  0.7.x. Ora è compilata al build con `scripts/build/tui.mjs`, come
-  nell'immagine ufficiale, in `/opt/hermes-tui`, e `HERMES_TUI_DIR` e
-  `HERMES_NODE` puntano lì e al node dell'immagine. Verificato nell'immagine
-  di prova: `hermes --tui` in un terminale apre l'interfaccia.
 - **Gateway unico per tutti i profili**: la logica di Hermes è invariata da
   v0.21.7 a v0.22.2. Il `multiplex_profiles: true` esplicito serve ancora,
   perché senza Hermes si rifiuterebbe ancora di multiplexare dentro un
@@ -66,11 +77,14 @@
   codice): `web/vite.config.ts`, workspace ed `engines` npm, extra Python,
   `requires-python` e marker di `uv.lock` (Python 3.14), `node-deps.mjs`,
   `pm/lock.json`.
-- **Da verificare sul dispositivo**: build dal Supervisor, Ingress con
-  terminale, chat e pannello laterale (WebSocket), gateway con i profili, MCP, e
-  con `full` i tool `ha_*` con il token letto da `.env`. Gateway e dashboard
-  sono stati avviati solo nell'immagine di prova, fuori da s6 e senza
-  Supervisor.
+- **Verificato sul Pi** (2026-10-21, via SSH): Hermes v0.22.2 al commit
+  atteso, `hermes --version` corretto; `/opt/hermes-agent` di root e
+  `hermes update` rifiutato; gateway e dashboard su (HTTP 200), multiplex e
+  cron sui due profili; MCP con 27 tool. Con `ha_access: full` sul profilo
+  principale i quattro tool `ha_*` sono attivi, con `HASS_TOKEN` letto da
+  `.env` (tolto apposta dall'ambiente del processo di prova).
+- **Rimasto aperto, corretto nella 0.8.1**: TUI e chat della dashboard,
+  plugin HA nei profili.
 
 ## 0.7.4
 
