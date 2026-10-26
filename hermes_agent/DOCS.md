@@ -180,6 +180,20 @@ per usare `docker exec`. Quella protezione vale per tutti i container e per
 l'host: spegnerla per comodità di accesso a uno solo apre un varco molto
 più ampio del necessario.
 
+## Posta con himalaya
+
+Dalla 0.8.3 l'immagine contiene `himalaya` v1.2.0, il client IMAP/SMTP usato
+dalle skill `himalaya` ed `email-inbox-triage` di Hermes. L'App non
+configura nessuna casella: lo fai tu, da SSH, con `himalaya account
+configure` (usa una password per app, non quella principale). La
+configurazione sta in `/data/hermes/home/.config/himalaya/`.
+
+L'agente lo usa solo con il toolset `terminal`, cioè con
+`allow_shell_tools: true`: leggi prima il modello di sicurezza qui sotto,
+perché con la shell l'agente può leggere anche il token di HA. Una mail può
+inoltre contenere testo che l'agente scambia per istruzioni: per i controlli
+automatici della posta tieni l'accesso in sola lettura.
+
 ## Profili: più agenti, più bot
 
 Un profilo è un'istanza separata di Hermes dentro lo stesso add-on, con

@@ -108,6 +108,33 @@ RUN set -eu; \
     rm -rf /opt/hermes-ha-plugins/homeassistant/tests /tmp/official-plugins; \
     test -f /opt/hermes-ha-plugins/homeassistant/plugin.yaml
 
+# himalaya: client IMAP/SMTP da riga di comando, richiesto dalla skill `email`
+# inclusa in Hermes (prerequisito `commands: [himalaya]`). Resta a v1.2.0 di
+# proposito: la v2 ha cambiato la CLI (`mailbox` al posto di `folder`, niente
+# `template`) e la skill di Hermes descrive ancora la v1. Binario statico
+# (musl), nessuna libreria da aggiungere; i checksum sono quelli degli asset
+# GitHub della release, calcolati il 2026-10-26 e confermati identici sul Pi.
+# Va nell'immagine perché non si installa a runtime (regola #9).
+# `uname -m` coincide con i nomi degli asset: aarch64 e x86_64.
+ARG HIMALAYA_VERSION=v1.2.0
+ARG HIMALAYA_SHA256_AARCH64=643020b220991fac67726f3be11310fcf806e757feadbbab3efbddd713597872
+ARG HIMALAYA_SHA256_X86_64=e04e6382e3e664ef34b01afa1a2216113194a2975d2859727647b22d9b36d4e4
+RUN set -eu; \
+    arch="$(uname -m)"; \
+    case "${arch}" in \
+        aarch64) want="${HIMALAYA_SHA256_AARCH64}" ;; \
+        x86_64)  want="${HIMALAYA_SHA256_X86_64}" ;; \
+        *) echo "himalaya: architettura ${arch} non supportata" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/himalaya.tgz \
+        "https://github.com/pimalaya/himalaya/releases/download/${HIMALAYA_VERSION}/himalaya.${arch}-linux.tgz"; \
+    echo "${want}  /tmp/himalaya.tgz" | sha256sum -c -; \
+    mkdir -p /tmp/himalaya; \
+    tar -xzf /tmp/himalaya.tgz -C /tmp/himalaya himalaya; \
+    install -m 0755 /tmp/himalaya/himalaya /usr/local/bin/himalaya; \
+    rm -rf /tmp/himalaya /tmp/himalaya.tgz; \
+    himalaya --version
+
 # Python gestito da uv + venv dell'agent dal lockfile upstream (--frozen:
 # nessuna risoluzione di dipendenze, solo le versioni pinnate in uv.lock).
 # La dashboard (frontend Vite + backend FastAPI) è dentro hermes-agent
@@ -191,6 +218,7 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 COPY --from=builder /opt/python        /opt/python
 COPY --from=builder /opt/hermes-agent  /opt/hermes-agent
 COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
+COPY --from=builder /usr/local/bin/himalaya /usr/local/bin/himalaya
 
 # Build del frontend della dashboard (Vite/TypeScript in hermes-agent/web).
 # `--workspace web` (non un `npm install` alla radice, come il Dockerfile

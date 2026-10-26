@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.3
+
+**`himalaya` nell'immagine.** La skill `himalaya` di Hermes (e
+`email-inbox-triage`, che la usa) richiede il comando `himalaya`, che non
+c'era: sul Pi `which himalaya` non trovava nulla. Non si può installare a
+runtime (regola #9), quindi il `Dockerfile` scarica il binario v1.2.0 con
+checksum fissato, per aarch64 e amd64.
+
+- Resta alla v1.2.0 di proposito: la v2 ha cambiato la CLI (`mailbox` al
+  posto di `folder`, niente `template`) e la skill inclusa descrive la v1.
+- Verificato: il binario statico (musl) parte sul Pi con lo stesso checksum
+  del build, e lo stesso blocco del `Dockerfile` costruisce e stampa la
+  versione in un container arm64 e amd64 puliti. **Non verificato:** il
+  build completo dell'App e l'uso con una casella vera.
+- Questa versione installa solo il programma: nessuna casella è
+  configurata e non cambia nessuna impostazione. Per usarlo dall'agente
+  serve il toolset `terminal` (`allow_shell_tools`), con il compromesso
+  della regola #8.
+
 ## 0.8.2
 
 **L'MCP di Home Assistant spento resta spento.**
