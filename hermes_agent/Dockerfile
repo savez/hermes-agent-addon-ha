@@ -10,9 +10,13 @@
 
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-debian:bookworm
 
-# uv da immagine ufficiale Astral (niente `curl | sh`).
-# Per un pin ancora più stretto aggiungi il digest: ghcr.io/astral-sh/uv:0.11.6@sha256:...
-FROM ghcr.io/astral-sh/uv:0.11.6 AS uv
+# uv da immagine ufficiale Astral (niente `curl | sh`). Allineato all'uv che
+# hermes-agent fissa in `pm/lock.json` al tag di HERMES_REF (0.13.5 per la
+# v0.22.5): il suo `uv.lock` è passato a `revision = 5` con il commit "uv
+# resolution works again on newest uv", e va letto da un uv recente quanto
+# quello che l'ha scritto. Da ricontrollare a ogni salto di versione.
+# Per un pin ancora più stretto aggiungi il digest: ghcr.io/astral-sh/uv:0.13.5@sha256:...
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
 
 # Node per la build del frontend della dashboard (`web/`, Vite/TypeScript).
 # hermes-agent pinna il proprio toolchain a Node 26 ovunque (vedi il
@@ -36,8 +40,8 @@ SHELL ["/bin/bash", "-c"]
 # HA_PLUGIN_SHA (sotto) e si ricontrolla PYTHON_VERSION — checklist in
 # CLAUDE.md.
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
-ARG HERMES_REF=v0.22.2
-ARG HERMES_COMMIT=d923a5eb487a17c0a68801bba9ef0f56c81040a8
+ARG HERMES_REF=v0.22.5
+ARG HERMES_COMMIT=bf0203a794a07aac3ff764972ab9087baa4e4f4e
 # Extra di hermes-agent installati in fase di build. I provider non elencati
 # qui non potranno essere installati a runtime (lazy install disattivato).
 # OpenAI / OpenRouter / endpoint compatibili OpenAI sono già nel core.
@@ -55,7 +59,8 @@ ARG HERMES_EXTRAS="--extra all --extra anthropic --extra messaging"
 # `resolution-markers = ["python_full_version >= '3.14' ..."]`, quindi con la
 # 3.12 il build muore con "The current Python platform is not compatible with
 # the lockfile's supported environments" (incidente del 2026-10-12). Il lock
-# della v0.22.2 ha gli stessi marker (verificato il 2026-10-21). Da
+# della v0.22.2 ha gli stessi marker (verificato il 2026-10-21), e così quello
+# della v0.22.5 (verificato il 2026-10-27). Da
 # ricontrollare a ogni salto di versione di hermes-agent.
 ARG PYTHON_VERSION=3.14
 
@@ -99,7 +104,7 @@ RUN set -eu; \
 # va riallineato a ogni salto di versione di Hermes. Unica dipendenza aiohttp,
 # già nel venv (controllo di import sotto).
 ARG HA_PLUGIN_REPO=https://github.com/NousResearch/hermes-official-plugins.git
-ARG HA_PLUGIN_SHA=a4e311e433f1470b1fec15434deea6a05e8644eb
+ARG HA_PLUGIN_SHA=4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072
 RUN set -eu; \
     git clone --filter=blob:none --no-checkout "${HA_PLUGIN_REPO}" /tmp/official-plugins; \
     git -C /tmp/official-plugins checkout -q "${HA_PLUGIN_SHA}" -- homeassistant; \
@@ -107,6 +112,33 @@ RUN set -eu; \
     cp -a /tmp/official-plugins/homeassistant /opt/hermes-ha-plugins/homeassistant; \
     rm -rf /opt/hermes-ha-plugins/homeassistant/tests /tmp/official-plugins; \
     test -f /opt/hermes-ha-plugins/homeassistant/plugin.yaml
+
+# himalaya: client IMAP/SMTP da riga di comando, richiesto dalla skill `email`
+# inclusa in Hermes (prerequisito `commands: [himalaya]`). Resta a v1.2.0 di
+# proposito: la v2 ha cambiato la CLI (`mailbox` al posto di `folder`, niente
+# `template`) e la skill di Hermes descrive ancora la v1. Binario statico
+# (musl), nessuna libreria da aggiungere; i checksum sono quelli degli asset
+# GitHub della release, calcolati il 2026-10-26 e confermati identici sul Pi.
+# Va nell'immagine perché non si installa a runtime (regola #9).
+# `uname -m` coincide con i nomi degli asset: aarch64 e x86_64.
+ARG HIMALAYA_VERSION=v1.2.0
+ARG HIMALAYA_SHA256_AARCH64=643020b220991fac67726f3be11310fcf806e757feadbbab3efbddd713597872
+ARG HIMALAYA_SHA256_X86_64=e04e6382e3e664ef34b01afa1a2216113194a2975d2859727647b22d9b36d4e4
+RUN set -eu; \
+    arch="$(uname -m)"; \
+    case "${arch}" in \
+        aarch64) want="${HIMALAYA_SHA256_AARCH64}" ;; \
+        x86_64)  want="${HIMALAYA_SHA256_X86_64}" ;; \
+        *) echo "himalaya: architettura ${arch} non supportata" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/himalaya.tgz \
+        "https://github.com/pimalaya/himalaya/releases/download/${HIMALAYA_VERSION}/himalaya.${arch}-linux.tgz"; \
+    echo "${want}  /tmp/himalaya.tgz" | sha256sum -c -; \
+    mkdir -p /tmp/himalaya; \
+    tar -xzf /tmp/himalaya.tgz -C /tmp/himalaya himalaya; \
+    install -m 0755 /tmp/himalaya/himalaya /usr/local/bin/himalaya; \
+    rm -rf /tmp/himalaya /tmp/himalaya.tgz; \
+    himalaya --version
 
 # Python gestito da uv + venv dell'agent dal lockfile upstream (--frozen:
 # nessuna risoluzione di dipendenze, solo le versioni pinnate in uv.lock).
@@ -166,6 +198,11 @@ RUN apt-get update \
         # può usare git per altre funzioni. Toglierlo richiede prima di
         # verificare chi lo usa a monte.
         git \
+        # Font per il plugin image-render (SVG -> PNG/JPG): senza nessun font
+        # resvg scarta in silenzio ogni <text> e i grafici escono senza
+        # etichette. DejaVu copre sans, serif e mono con accenti; il plugin
+        # mappa su questi le famiglie generiche e quelle sconosciute.
+        fonts-dejavu-core \
         libatomic1 \
         nginx-light \
         openssh-server \
@@ -191,6 +228,7 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 COPY --from=builder /opt/python        /opt/python
 COPY --from=builder /opt/hermes-agent  /opt/hermes-agent
 COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
+COPY --from=builder /usr/local/bin/himalaya /usr/local/bin/himalaya
 
 # Build del frontend della dashboard (Vite/TypeScript in hermes-agent/web).
 # `--workspace web` (non un `npm install` alla radice, come il Dockerfile
@@ -200,7 +238,7 @@ COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
 # addon nativo che richiede un python3 di sistema per compilare (non
 # presente in questa immagine, e comunque inutile: il dashboard usa
 # ptyprocess Python lato backend, xterm.js lato frontend — niente PTY di
-# Node qui). node_modules resta nell'immagine: serve alla TUI di `ui-tui`.
+# Node qui). node_modules si cancella a fine build (vedi sotto).
 WORKDIR /opt/hermes-agent
 
 # Fix per le pagine che restavano vuote sotto Ingress (System/Chat — vedi
@@ -242,6 +280,15 @@ RUN set -eux; \
 # Pi la TUI non partiva più dal salto a v0.21.7). Stesso schema dell'immagine
 # ufficiale: `scripts/build/tui.mjs --out`, poi HERMES_TUI_DIR punta lì (ENV
 # sotto e /usr/local/bin/hermes).
+#
+# Dalla 0.8.6 i node_modules si cancellano nello STESSO RUN, a build finito
+# (in un RUN separato resterebbero nel layer di sopra): ~440 MB su ~2 GB.
+# A runtime non servono: la TUI compilata importa solo moduli interni di Node
+# e il frontend è già impacchettato in web_dist. Vale SOLO perché la
+# dashboard parte con `--skip-build` (s6-rc.d/dashboard/run): senza, Hermes
+# richiama node-deps.mjs e si torna al ciclo di riavvii del 2026-10-12.
+# Verificato il 2026-10-27 su v0.22.5: dashboard, terminale (/api/pty) e chat
+# (/api/ws) identici con e senza node_modules. Da riverificare a ogni salto.
 # hadolint ignore=DL3016
 RUN set -eux; \
     npm install --workspace web --workspace ui-tui --include-workspace-root \
@@ -251,8 +298,12 @@ RUN set -eux; \
     grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js; \
     test -d ui-tui/node_modules; \
     node scripts/build/tui.mjs --source /opt/hermes-agent --out /opt/hermes-tui; \
-    test -f /opt/hermes-tui/dist/entry.js
+    test -f /opt/hermes-tui/dist/entry.js; \
+    rm -rf node_modules web/node_modules ui-tui/node_modules apps/*/node_modules
 
+# rootfs porta anche i plugin dell'App (/opt/hermes-app-plugins, oggi solo
+# image-render): codice nostro, collegato nei profili da render_config.py e
+# di root come tutto /opt (chown sotto).
 COPY rootfs /
 
 # I permessi di esecuzione si perdono facilmente copiando via Samba: li
@@ -279,7 +330,8 @@ RUN chmod 0755 \
     # grosso degli import). Fatto in questo stage, dopo ogni COPY, perché i
     # .pyc vengono validati sul mtime dei sorgenti.
     && /opt/hermes-agent/.venv/bin/python -m compileall -q \
-        -x '/(node_modules|\.git)/' /opt/hermes-agent >/dev/null \
+        -x '/(node_modules|\.git)/' /opt/hermes-agent /opt/hermes-ha-plugins \
+        /opt/hermes-app-plugins >/dev/null \
     # Con il checkout di root, git eseguito da `hermes` rifiuta il repository
     # ("detected dubious ownership") e Hermes non riesce più a leggere la
     # propria versione: `hermes --version` diceva `vunknown` (verificato

@@ -1,0 +1,15 @@
+name: image-render
+label: Image render
+kind: standalone
+version: 1.0.0
+author: hermes-ha-app
+description: >
+  Converte SVG in PNG, JPEG o WEBP e converte/ridimensiona immagini già
+  presenti nella cache di Hermes. Usa resvg_py e Pillow, già nel venv di
+  Hermes: nessuna dipendenza in più, nessuna rete, nessuna shell. Scrive solo
+  nella cache immagini del profilo attivo, da cui i file si inviano con
+  MEDIA:<path>.
+provides_tools:
+  - svg_to_image
+  - convert_image
+provides_hooks: []

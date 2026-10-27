@@ -15,14 +15,16 @@ Chiavi gestite:
   update.installs.<id>.channel  sempre stable (mai il branch main)
   mcp_servers.homeassistant     url e token se ha_access è mcp o full (le altre
                                 chiavi, es. enabled: false, restano)
-  plugins.enabled               contiene "homeassistant" solo se ha_access è full
+  plugins.enabled               contiene "homeassistant" solo se ha_access è full,
+                                e "image-render" salvo che sia in plugins.disabled
 
 Fuori dal file: con ha_access full crea il link
 <cartella del config>/plugins/homeassistant -> plugin_src (default
-/opt/hermes-ha-plugins/homeassistant), altrimenti lo toglie.
+/opt/hermes-ha-plugins/homeassistant), altrimenti lo toglie. Il link
+plugins/image-render -> /opt/hermes-app-plugins/image-render c'è sempre.
 
-Con --profile (profili secondari, profiles/*/config.yaml) gestisce SOLO il
-plugin HA: link, plugins.enabled/disabled e la voce `homeassistant` in
+Con --profile (profili secondari, profiles/*/config.yaml) gestisce SOLO i
+plugin dell'App: link, plugins.enabled/disabled e la voce `homeassistant` in
 agent.disabled_toolsets. Gli altri vincoli non sono ancora applicati ai
 profili: è un limite noto, da risolvere a parte.
 """
@@ -58,36 +60,62 @@ INSTALL_ROOT = "/opt/hermes-agent"
 HA_PLUGIN_NAME = "homeassistant"
 HA_PLUGIN_SRC = "/opt/hermes-ha-plugins/homeassistant"
 
+# Plugin dell'App (codice nostro, in rootfs/opt/hermes-app-plugins): tool
+# `svg_to_image` e `convert_image`. Collegato in ogni profilo a prescindere da
+# ha_access: non usa rete, shell né token, e scrive solo nella cache immagini.
+# La variabile d'ambiente serve solo ai test.
+IMAGE_PLUGIN_NAME = "image-render"
 
-def sync_ha_plugin(config_path: str, ha_access: str, plugin_src: str, cfg: dict) -> None:
-    """Collega o scollega il plugin HA in <dir del config>/plugins e aggiorna
-    plugins.enabled. Il link punta a una cartella di root in sola lettura:
-    l'agente non può modificare il codice del plugin. Hermes riconosce il
-    plugin come installato da `(home / "plugins" / nome).is_dir()`
-    (left_core_migration.plugin_present), che segue i link."""
-    link = os.path.join(os.path.dirname(os.path.abspath(config_path)), "plugins", HA_PLUGIN_NAME)
-    plugins = cfg.get("plugins") or {}
-    enabled = [p for p in (plugins.get("enabled") or []) if p != HA_PLUGIN_NAME]
 
-    if ha_access == "full":
-        # plugins.disabled vince su plugins.enabled: con `full` va tolto.
-        if HA_PLUGIN_NAME in (plugins.get("disabled") or []):
-            plugins["disabled"] = [p for p in plugins["disabled"] if p != HA_PLUGIN_NAME]
+def image_plugin_src() -> str:
+    base = os.environ.get("HERMES_APP_PLUGINS_DIR", "/opt/hermes-app-plugins")
+    return os.path.join(base, IMAGE_PLUGIN_NAME)
+
+
+def _link_plugin(config_path: str, name: str, src: str, wanted: bool, enabled: list) -> None:
+    """Crea o toglie il link <dir del config>/plugins/<name> -> src e, se il
+    link è dell'App, aggiunge `name` a `enabled`. Il link punta a una cartella
+    di root in sola lettura: l'agente non può modificare il codice del plugin.
+    Hermes riconosce il plugin come installato da `(home / "plugins" /
+    nome).is_dir()` (left_core_migration.plugin_present), che segue i link.
+    Una cartella vera con lo stesso nome è dell'utente e resta com'è."""
+    link = os.path.join(os.path.dirname(os.path.abspath(config_path)), "plugins", name)
+    if wanted:
         os.makedirs(os.path.dirname(link), exist_ok=True)
-        if os.path.islink(link) and os.readlink(link) != plugin_src:
+        if os.path.islink(link) and os.readlink(link) != src:
             os.remove(link)
         if not os.path.lexists(link):
-            os.symlink(plugin_src, link)
+            os.symlink(src, link)
         if os.path.islink(link):
-            enabled.append(HA_PLUGIN_NAME)
-            print(f"[render_config] plugin {HA_PLUGIN_NAME}: collegato")
+            enabled.append(name)
+            print(f"[render_config] plugin {name}: collegato")
         else:
-            print(f"[render_config] plugin {HA_PLUGIN_NAME}: {link} non è un link dell'App, lasciato com'è")
+            print(f"[render_config] plugin {name}: {link} non è un link dell'App, lasciato com'è")
     elif os.path.islink(link):
         os.remove(link)
-        print(f"[render_config] plugin {HA_PLUGIN_NAME}: rimosso")
+        print(f"[render_config] plugin {name}: rimosso")
     elif os.path.lexists(link):
-        print(f"[render_config] plugin {HA_PLUGIN_NAME}: {link} non è un link dell'App, lasciato com'è")
+        print(f"[render_config] plugin {name}: {link} non è un link dell'App, lasciato com'è")
+
+
+def sync_plugins(config_path: str, ha_access: str, plugin_src: str, cfg: dict) -> None:
+    """Collega i plugin dell'App in <dir del config>/plugins e aggiorna
+    plugins.enabled: `homeassistant` solo con ha_access full, `image-render`
+    sempre, salvo che l'utente l'abbia messo in plugins.disabled."""
+    plugins = cfg.get("plugins") or {}
+    managed = (HA_PLUGIN_NAME, IMAGE_PLUGIN_NAME)
+    enabled = [p for p in (plugins.get("enabled") or []) if p not in managed]
+
+    # plugins.disabled vince su plugins.enabled: con `full` va tolto.
+    if ha_access == "full" and HA_PLUGIN_NAME in (plugins.get("disabled") or []):
+        plugins["disabled"] = [p for p in plugins["disabled"] if p != HA_PLUGIN_NAME]
+    _link_plugin(config_path, HA_PLUGIN_NAME, plugin_src, ha_access == "full", enabled)
+
+    # Il link c'è sempre; spegnerlo è una scelta dell'utente (plugins.disabled
+    # o il toolset dalla dashboard) e qui la si rispetta.
+    _link_plugin(config_path, IMAGE_PLUGIN_NAME, image_plugin_src(), True, enabled)
+    if IMAGE_PLUGIN_NAME in (plugins.get("disabled") or []) and IMAGE_PLUGIN_NAME in enabled:
+        enabled.remove(IMAGE_PLUGIN_NAME)
 
     # Una lista vuota non è neutra quanto una chiave assente: si scrive solo
     # se c'era già o se c'è qualcosa da elencare.
@@ -126,7 +154,7 @@ def profile_main(argv: list) -> None:
     plugin_src = argv[2] if len(argv) > 2 else HA_PLUGIN_SRC
     cfg = load(path)
     allow_ha_toolset(ha_access, cfg)
-    sync_ha_plugin(path, ha_access, plugin_src, cfg)
+    sync_plugins(path, ha_access, plugin_src, cfg)
     save(path, cfg)
 
 
@@ -249,8 +277,8 @@ def main() -> None:
     else:
         cfg.pop("mcp_servers", None)
 
-    # ── plugin Home Assistant (solo full) ───────────────────────────────────
-    sync_ha_plugin(path, ha_access, plugin_src, cfg)
+    # ── plugin dell'App: Home Assistant (solo full) e image-render ─────────
+    sync_plugins(path, ha_access, plugin_src, cfg)
 
     save(path, cfg)
 
