@@ -123,12 +123,17 @@ Da fare tutto insieme, in una nuova versione dell'App:
    `tests/test_toolsets_live.py`.
 2. `HA_PLUGIN_SHA`: lo SHA di `plugin-catalog/homeassistant.yaml` al nuovo
    tag.
-3. `resolution-markers` di `uv.lock` contro `PYTHON_VERSION`.
+3. `resolution-markers` di `uv.lock` contro `PYTHON_VERSION`, e la versione
+   di uv (`FROM ghcr.io/astral-sh/uv:...`) contro quella che `pm/lock.json`
+   fissa al nuovo tag: un `uv.lock` scritto da un uv più recente può non
+   essere letto da uno vecchio (dalla v0.22.5 il lock è `revision = 5`).
 4. Diff fra il vecchio e il nuovo tag dei punti di contatto: `web/vite.config.ts`
    (patch di Ingress), workspace e `engines` di `package.json`, extra in
    `pyproject.toml`, `scripts/build/node-deps.mjs`, `pm/lock.json`,
    `hermes_cli/gateway_multiplex_mode.py`, `hermes_cli/update_contract.py`,
-   `hermes_cli/web_server.py`. Più le note di rilascio, cercando funzioni
+   `hermes_cli/web_server.py` e, dalla v0.22.5, `hermes_cli/web_server_boundary.py`
+   (controlli su Host e Origin). Più le note di rilascio e
+   `LEFT_CORE` in `hermes_cli/left_core_migration.py`, cercando funzioni
    uscite dal core.
 5. Build arm64 in locale, poi verifica sul dispositivo con
    `docs/CHECKLIST-PI.md`.

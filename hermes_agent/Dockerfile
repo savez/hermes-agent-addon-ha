@@ -10,9 +10,13 @@
 
 ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-debian:bookworm
 
-# uv da immagine ufficiale Astral (niente `curl | sh`).
-# Per un pin ancora più stretto aggiungi il digest: ghcr.io/astral-sh/uv:0.11.6@sha256:...
-FROM ghcr.io/astral-sh/uv:0.11.6 AS uv
+# uv da immagine ufficiale Astral (niente `curl | sh`). Allineato all'uv che
+# hermes-agent fissa in `pm/lock.json` al tag di HERMES_REF (0.13.5 per la
+# v0.22.5): il suo `uv.lock` è passato a `revision = 5` con il commit "uv
+# resolution works again on newest uv", e va letto da un uv recente quanto
+# quello che l'ha scritto. Da ricontrollare a ogni salto di versione.
+# Per un pin ancora più stretto aggiungi il digest: ghcr.io/astral-sh/uv:0.13.5@sha256:...
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
 
 # Node per la build del frontend della dashboard (`web/`, Vite/TypeScript).
 # hermes-agent pinna il proprio toolchain a Node 26 ovunque (vedi il
@@ -36,8 +40,8 @@ SHELL ["/bin/bash", "-c"]
 # HA_PLUGIN_SHA (sotto) e si ricontrolla PYTHON_VERSION — checklist in
 # CLAUDE.md.
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
-ARG HERMES_REF=v0.22.2
-ARG HERMES_COMMIT=d923a5eb487a17c0a68801bba9ef0f56c81040a8
+ARG HERMES_REF=v0.22.5
+ARG HERMES_COMMIT=bf0203a794a07aac3ff764972ab9087baa4e4f4e
 # Extra di hermes-agent installati in fase di build. I provider non elencati
 # qui non potranno essere installati a runtime (lazy install disattivato).
 # OpenAI / OpenRouter / endpoint compatibili OpenAI sono già nel core.
@@ -55,7 +59,8 @@ ARG HERMES_EXTRAS="--extra all --extra anthropic --extra messaging"
 # `resolution-markers = ["python_full_version >= '3.14' ..."]`, quindi con la
 # 3.12 il build muore con "The current Python platform is not compatible with
 # the lockfile's supported environments" (incidente del 2026-10-12). Il lock
-# della v0.22.2 ha gli stessi marker (verificato il 2026-10-21). Da
+# della v0.22.2 ha gli stessi marker (verificato il 2026-10-21), e così quello
+# della v0.22.5 (verificato il 2026-10-27). Da
 # ricontrollare a ogni salto di versione di hermes-agent.
 ARG PYTHON_VERSION=3.14
 
@@ -99,7 +104,7 @@ RUN set -eu; \
 # va riallineato a ogni salto di versione di Hermes. Unica dipendenza aiohttp,
 # già nel venv (controllo di import sotto).
 ARG HA_PLUGIN_REPO=https://github.com/NousResearch/hermes-official-plugins.git
-ARG HA_PLUGIN_SHA=a4e311e433f1470b1fec15434deea6a05e8644eb
+ARG HA_PLUGIN_SHA=4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072
 RUN set -eu; \
     git clone --filter=blob:none --no-checkout "${HA_PLUGIN_REPO}" /tmp/official-plugins; \
     git -C /tmp/official-plugins checkout -q "${HA_PLUGIN_SHA}" -- homeassistant; \
@@ -193,6 +198,11 @@ RUN apt-get update \
         # può usare git per altre funzioni. Toglierlo richiede prima di
         # verificare chi lo usa a monte.
         git \
+        # Font per il plugin image-render (SVG -> PNG/JPG): senza nessun font
+        # resvg scarta in silenzio ogni <text> e i grafici escono senza
+        # etichette. DejaVu copre sans, serif e mono con accenti; il plugin
+        # mappa su questi le famiglie generiche e quelle sconosciute.
+        fonts-dejavu-core \
         libatomic1 \
         nginx-light \
         openssh-server \
@@ -281,6 +291,9 @@ RUN set -eux; \
     node scripts/build/tui.mjs --source /opt/hermes-agent --out /opt/hermes-tui; \
     test -f /opt/hermes-tui/dist/entry.js
 
+# rootfs porta anche i plugin dell'App (/opt/hermes-app-plugins, oggi solo
+# image-render): codice nostro, collegato nei profili da render_config.py e
+# di root come tutto /opt (chown sotto).
 COPY rootfs /
 
 # I permessi di esecuzione si perdono facilmente copiando via Samba: li
@@ -307,7 +320,8 @@ RUN chmod 0755 \
     # grosso degli import). Fatto in questo stage, dopo ogni COPY, perché i
     # .pyc vengono validati sul mtime dei sorgenti.
     && /opt/hermes-agent/.venv/bin/python -m compileall -q \
-        -x '/(node_modules|\.git)/' /opt/hermes-agent >/dev/null \
+        -x '/(node_modules|\.git)/' /opt/hermes-agent /opt/hermes-ha-plugins \
+        /opt/hermes-app-plugins >/dev/null \
     # Con il checkout di root, git eseguito da `hermes` rifiuta il repository
     # ("detected dubious ownership") e Hermes non riesce più a leggere la
     # propria versione: `hermes --version` diceva `vunknown` (verificato

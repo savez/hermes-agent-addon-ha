@@ -1,5 +1,78 @@
 # Changelog
 
+## 0.8.5
+
+**Hermes Agent v0.22.5** (da v0.22.2, commit `bf0203a`, 3291 commit a monte).
+Le note di rilascio a monte sono quasi vuote (circa 700 PR rimandate alle note
+della v0.23.0), quindi il controllo è stato fatto sul codice e dal vivo.
+
+- **uv 0.11.6 → 0.13.5**, lo stesso che Hermes fissa in `pm/lock.json`: il
+  suo `uv.lock` è passato a `revision = 5` ("uv resolution works again on
+  newest uv"). I `resolution-markers` non cambiano, Python resta 3.14.
+- **Plugin Home Assistant** allo SHA del catalogo `4d492b1` (sempre 2.0.1):
+  filtri facoltativi sulle entità (`HASS_ENTITY_DENYLIST`,
+  `HASS_ENTITY_ALLOWLIST`, `HASS_MAX_ENTITIES`), correzioni su aree ed errori
+  di HA. I domini bloccati (`shell_command`, `command_line`, `python_script`,
+  `pyscript`, `hassio`, `rest_command`) ci sono ancora.
+- Usciti dal core verso il catalogo: langfuse, `hermes mcp serve`, il
+  backend Singularity e `hermes import-agent`. Nessuno è usato in questa
+  installazione (controllato sul Pi), quindi non entrano nell'immagine.
+- Migrazione del config 50 → 51: toglie solo
+  `cron.bot_chat_delivery_timeout_seconds`.
+- Punti di contatto invariati o compatibili: `web/vite.config.ts` uguale (la
+  patch di Ingress si applica), `update_contract.py` uguale, il
+  `multiplex_profiles: true` esplicito vale ancora come decisione finale,
+  `node-deps.mjs` aggiunge solo la preparazione di Electron per
+  `apps/desktop`, che non installiamo.
+- Verificato nell'immagine arm64 costruita in locale: build completo con
+  tutti i suoi controlli (tag → commit, patch Vite, workspace `web` e
+  `ui-tui`, TUI); `hermes --version` = v0.22.5 · stable;
+  dashboard dietro il nginx dell'App con `X-Ingress-Path` come il
+  Supervisor (prefisso iniettato, asset caricati, WebSocket `/api/pty` e
+  `/api/ws` accettati, Origin estraneo rifiutato con 403,
+  `can_update_hermes: false`); gateway avviato con copie dei `config.yaml`
+  del Pi: multiplex su `default` e `savez`, config migrato a 51 con
+  `auxiliary.vision`, `fallback_providers` e plugin intatti; plugin
+  `image-render` funzionante con Pillow 13; i 51 test passano
+  nell'immagine. **Non verificato:** sul Pi, con i bot Telegram veri.
+
+## 0.8.4
+
+**L'agente può trasformare SVG in PNG, JPG e WEBP.** Nuovo plugin dell'App
+`image-render` (in `/opt/hermes-app-plugins`), con i tool `svg_to_image` e
+`convert_image` nel toolset `image_render`. Serve a far disegnare all'agente
+grafici e schemi in SVG e a mandarli come immagine (`MEDIA:<percorso>`).
+
+- Nessuna dipendenza nuova in Python: usa `resvg_py` e Pillow, già nel venv di
+  Hermes (`resvg_py` è nelle dipendenze base della v0.22.2 per le icone).
+- **Font nell'immagine** (`fonts-dejavu-core`): il container non aveva
+  nessun font, e resvg scarta in silenzio il testo che non sa disegnare —
+  ogni grafico sarebbe uscito senza etichette. Verificato anche che una
+  famiglia assente (es. "Comic Sans MS") fa sparire il testo pur con altri
+  font installati: il plugin accoda `sans-serif` a ogni `font-family`.
+- Funziona anche con `allow_shell_tools: false` e resta dentro la regola #8:
+  scrive solo nella cache immagini del profilo con un nome generato, legge
+  solo dalla cache, rifiuta nell'SVG ogni riferimento a file o URL esterni
+  (un `<image href="/data/hermes/...">` verrebbe caricato da resvg), lato
+  massimo 4096 px perché un `width="100000"` non uccida il gateway.
+- `render_config.py` collega e abilita il plugin in ogni profilo a ogni
+  avvio (`plugins.enabled`), salvo che l'utente l'abbia messo in
+  `plugins.disabled`. Il collegamento del plugin HA è ora la stessa funzione.
+- I `.pyc` dei plugin (`/opt/hermes-ha-plugins`, `/opt/hermes-app-plugins`)
+  sono compilati al build come quelli di Hermes.
+- Verificato nell'immagine arm64 costruita in locale: il loader di Hermes
+  carica il plugin e registra i due tool; il resolver vero abilita
+  `image_render` su `cli` e `telegram` con copie dei `config.yaml` del Pi
+  (principale e `savez`); un SVG con testo accentato in una famiglia assente
+  esce leggibile (controllato a occhio e sui pixel); riferimenti esterni e
+  file fuori dalla cache sono rifiutati; il file prodotto sta in una
+  cartella da cui il gateway consegna i `MEDIA:`. `test_toolsets_live.py`,
+  `test_render_config.py` e `test_image_render.py` passano nell'immagine.
+  **Non verificato:** l'invio reale su Telegram dal Pi, e il caso multiplex
+  dentro il gateway (la prova ha usato un processo per profilo con
+  `HERMES_HOME`): sul bot di `savez` il file dovrebbe finire in
+  `profiles/savez/cache/images`.
+
 ## 0.8.3
 
 **`himalaya` nell'immagine.** La skill `himalaya` di Hermes (e

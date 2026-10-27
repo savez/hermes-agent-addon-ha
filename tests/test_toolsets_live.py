@@ -8,10 +8,10 @@ in produzione, non risolva mai i toolset UNSAFE quando allow_shell_tools
 Richiede un venv di hermes-agent alla versione fissata nel Dockerfile
 (HERMES_REF e HERMES_COMMIT in hermes_agent/Dockerfile). Per prepararlo:
 
-    git clone --depth 1 --branch v0.22.2 \\
+    git clone --depth 1 --branch v0.22.5 \\
         https://github.com/NousResearch/hermes-agent.git /tmp/hermes-agent-src
     cd /tmp/hermes-agent-src
-    test "$(git rev-parse HEAD)" = d923a5eb487a17c0a68801bba9ef0f56c81040a8
+    test "$(git rev-parse HEAD)" = bf0203a794a07aac3ff764972ab9087baa4e4f4e
     uv sync --frozen --python 3.14 --extra all --extra anthropic --extra messaging
     export HERMES_AGENT_VENV=/tmp/hermes-agent-src/.venv
 

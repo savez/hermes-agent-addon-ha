@@ -25,7 +25,7 @@ dipendenze a runtime senza passare dal controllo che blocca gli
 "Modello di sicurezza" sotto), non configurabili da questa App.
 
 Ogni versione dell'App installa **una versione fissa di `hermes-agent`**
-(dalla 0.8.0: v0.22.2), verificata al build sul suo commit. Il pulsante
+(dalla 0.8.5: v0.22.5), verificata al build sul suo commit. Il pulsante
 "Update" della dashboard è disattivato: Hermes si aggiorna aggiornando
 l'App (vedi "Aggiornare" sotto).
 
@@ -193,6 +193,33 @@ L'agente lo usa solo con il toolset `terminal`, cioè con
 perché con la shell l'agente può leggere anche il token di HA. Una mail può
 inoltre contenere testo che l'agente scambia per istruzioni: per i controlli
 automatici della posta tieni l'accesso in sola lettura.
+
+## Immagini da SVG
+
+Dalla 0.8.4 l'App aggiunge a Hermes il toolset `image_render`, con due tool:
+
+- `svg_to_image`: l'agente scrive un SVG (grafico, schema, card, locandina)
+  e lo trasforma in PNG, JPG o WEBP, con larghezza o altezza a scelta;
+- `convert_image`: converte o ridimensiona un'immagine già nella cache di
+  Hermes, per esempio una foto ricevuta su Telegram (anche HEIC) o un file
+  prodotto da `svg_to_image`.
+
+Il file finisce nella cache immagini del profilo (`cache/images`), e l'agente
+lo invia scrivendo `MEDIA:<percorso>` nella risposta; può anche guardarlo con
+il tool di vision per controllare il risultato. Il plugin è collegato e
+abilitato in **tutti i profili** a ogni avvio, con qualunque `ha_access` e
+anche con `allow_shell_tools: false`: non usa rete né shell e non legge
+nessun file fuori dalla cache. Per spegnerlo in un profilo aggiungi
+`image-render` a `plugins.disabled` nel suo `config.yaml`, oppure togli il
+toolset dalla dashboard.
+
+Limiti: lato massimo 4096 px; font disponibili solo DejaVu (sans-serif,
+serif, monospace — le altre famiglie ricadono su sans-serif), niente emoji a
+colori; nell'SVG sono ammessi solo riferimenti interni (`#id`) e immagini
+inline `data:image/png|jpeg|gif|webp`, nessun file o URL esterno.
+
+Dopo l'aggiornamento riavvia l'App e apri una sessione nuova (`/new` su
+Telegram): l'elenco dei tool è fissato quando la sessione nasce.
 
 ## Profili: più agenti, più bot
 

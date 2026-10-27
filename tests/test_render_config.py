@@ -7,6 +7,7 @@ vedi tests/test_toolsets_live.py.
 
 Esecuzione: uv run --with pyyaml --with pytest pytest tests/test_render_config.py
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,6 +28,16 @@ RENDER_CONFIG = (
 
 UNSAFE = {"terminal", "code_execution", "file"}
 DEFAULT_CLI = ["web", "memory", "session_search", "todo", "clarify", "skills", "cronjob"]
+IMAGE = "image-render"
+
+
+def _env(tmp_path):
+    # Come per il plugin HA, nei test il plugin image-render è una copia
+    # finta: HERMES_APP_PLUGINS_DIR sostituisce /opt/hermes-app-plugins.
+    base = tmp_path / "image" / "hermes-app-plugins"
+    (base / IMAGE).mkdir(parents=True, exist_ok=True)
+    (base / IMAGE / "plugin.yaml").write_text(f"name: {IMAGE}\n")
+    return {**os.environ, "HERMES_APP_PLUGINS_DIR": str(base)}
 
 
 def run_render_config(tmp_path, ha_access, allow_shell, initial_cfg=None, plugin_src=None):
@@ -49,6 +60,7 @@ def run_render_config(tmp_path, ha_access, allow_shell, initial_cfg=None, plugin
         ],
         capture_output=True,
         text=True,
+        env=_env(tmp_path),
     )
     assert result.returncode == 0, result.stderr
     with open(config_path, encoding="utf-8") as fh:
@@ -165,9 +177,9 @@ def test_plugins_enabled_preserved(tmp_path):
     src = make_plugin_src(tmp_path)
     initial = {"plugins": {"enabled": ["disk-cleanup"], "disabled": []}}
     cfg, _ = run_render_config(tmp_path, "full", "false", initial_cfg=initial, plugin_src=src)
-    assert cfg["plugins"]["enabled"] == ["disk-cleanup", "homeassistant"]
+    assert cfg["plugins"]["enabled"] == ["disk-cleanup", "homeassistant", IMAGE]
     cfg, _ = run_render_config(tmp_path, "mcp", "false", plugin_src=src)
-    assert cfg["plugins"]["enabled"] == ["disk-cleanup"]
+    assert cfg["plugins"]["enabled"] == ["disk-cleanup", IMAGE]
     assert cfg["plugins"]["disabled"] == []
 
 
@@ -181,17 +193,51 @@ def test_user_plugin_dir_not_removed(tmp_path):
         [sys.executable, str(RENDER_CONFIG), str(config_path), "mcp", "false", str(src)],
         capture_output=True,
         text=True,
+        env=_env(tmp_path),
     )
     assert result.returncode == 0, result.stderr
     assert (own / "plugin.yaml").is_file()
     assert "non è un link dell'App" in result.stdout
 
 
-def test_mcp_without_plugins_key_does_not_create_it(tmp_path):
-    # Una lista `plugins.enabled` vuota non è neutra per Hermes quanto una
-    # chiave assente: se non c'è nulla da aggiungere, non la scriviamo.
+def test_mcp_without_plugins_key_enables_only_image_render(tmp_path):
     cfg, _ = run_render_config(tmp_path, "mcp", "false")
-    assert "plugins" not in cfg
+    assert cfg["plugins"] == {"enabled": [IMAGE]}
+
+
+def test_image_render_linked_with_any_ha_access(tmp_path):
+    for ha_access in ("none", "mcp", "full"):
+        cfg, _ = run_render_config(tmp_path, ha_access, "false")
+        link = tmp_path / "plugins" / IMAGE
+        assert link.is_symlink()
+        assert link.resolve() == (tmp_path / "image" / "hermes-app-plugins" / IMAGE).resolve()
+        assert cfg["plugins"]["enabled"].count(IMAGE) == 1
+
+
+def test_image_render_disabled_by_user_stays_disabled(tmp_path):
+    initial = {"plugins": {"enabled": [IMAGE], "disabled": [IMAGE]}}
+    cfg, _ = run_render_config(tmp_path, "mcp", "false", initial_cfg=initial)
+    assert IMAGE not in cfg["plugins"]["enabled"]
+    assert cfg["plugins"]["disabled"] == [IMAGE]
+
+
+def test_image_render_user_dir_and_disabled(tmp_path):
+    # Cartella dell'utente + plugin disabilitato: non deve far fallire l'avvio.
+    own = tmp_path / "plugins" / IMAGE
+    own.mkdir(parents=True)
+    initial = {"plugins": {"enabled": [], "disabled": [IMAGE]}}
+    cfg, _ = run_render_config(tmp_path, "mcp", "false", initial_cfg=initial)
+    assert cfg["plugins"] == {"enabled": [], "disabled": [IMAGE]}
+    assert not own.is_symlink()
+
+
+def test_image_render_user_dir_not_replaced(tmp_path):
+    own = tmp_path / "plugins" / IMAGE
+    own.mkdir(parents=True)
+    (own / "plugin.yaml").write_text("name: mine\n")
+    cfg, _ = run_render_config(tmp_path, "mcp", "false")
+    assert not own.is_symlink() and (own / "plugin.yaml").read_text() == "name: mine\n"
+    assert IMAGE not in cfg.get("plugins", {}).get("enabled", [])
 
 
 def test_full_removes_homeassistant_from_disabled_toolsets(tmp_path):
@@ -218,6 +264,7 @@ def run_profile_mode(tmp_path, ha_access, initial_cfg, plugin_src):
         [sys.executable, str(RENDER_CONFIG), "--profile", str(config_path), ha_access, str(plugin_src)],
         capture_output=True,
         text=True,
+        env=_env(tmp_path),
     )
     assert result.returncode == 0, result.stderr
     with open(config_path, encoding="utf-8") as fh:
@@ -235,7 +282,8 @@ def test_profile_mode_links_plugin_only(tmp_path):
     }
     cfg = run_profile_mode(tmp_path, "full", initial, src)
     assert (tmp_path / "plugins" / "homeassistant").is_symlink()
-    assert cfg["plugins"]["enabled"] == ["disk-cleanup", "homeassistant"]
+    assert (tmp_path / "plugins" / IMAGE).is_symlink()
+    assert cfg["plugins"]["enabled"] == ["disk-cleanup", "homeassistant", IMAGE]
     assert cfg["agent"]["disabled_toolsets"] == []
     assert cfg["platform_toolsets"] == {"cli": ["web", "code_execution"]}
     assert "security" not in cfg and "mcp_servers" not in cfg
@@ -246,4 +294,4 @@ def test_profile_mode_mcp_unlinks_plugin(tmp_path):
     run_profile_mode(tmp_path, "full", {"plugins": {"enabled": []}}, src)
     cfg = run_profile_mode(tmp_path, "mcp", {"plugins": {"enabled": ["homeassistant"]}}, src)
     assert not (tmp_path / "plugins" / "homeassistant").is_symlink()
-    assert cfg["plugins"]["enabled"] == []
+    assert cfg["plugins"]["enabled"] == [IMAGE]
