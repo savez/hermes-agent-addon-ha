@@ -28,6 +28,8 @@ cd /opt/hermes-agent || exit 1
 # runtime node 26.7.0 / npm 12.0.2). Il confronto fallisce sempre, i lazy
 # install sono spenti (regola #9) e il servizio riparte in ciclo — incidente
 # del 2026-10-12. Non è un ripiego: per un'immagine immutabile ricostruire il
-# frontend a runtime non ha senso comunque.
+# frontend a runtime non ha senso comunque. Dalla 0.8.6 è anche obbligatorio:
+# l'immagine non contiene più i node_modules (Dockerfile), e senza
+# --skip-build la dashboard non partirebbe.
 exec s6-setuidgid hermes /opt/hermes-agent/.venv/bin/hermes dashboard \
     --host 127.0.0.1 --port 8788 --no-open --skip-build

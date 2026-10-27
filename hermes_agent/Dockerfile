@@ -238,7 +238,7 @@ COPY --from=builder /usr/local/bin/himalaya /usr/local/bin/himalaya
 # addon nativo che richiede un python3 di sistema per compilare (non
 # presente in questa immagine, e comunque inutile: il dashboard usa
 # ptyprocess Python lato backend, xterm.js lato frontend — niente PTY di
-# Node qui). node_modules resta nell'immagine: serve alla TUI di `ui-tui`.
+# Node qui). node_modules si cancella a fine build (vedi sotto).
 WORKDIR /opt/hermes-agent
 
 # Fix per le pagine che restavano vuote sotto Ingress (System/Chat — vedi
@@ -280,6 +280,15 @@ RUN set -eux; \
 # Pi la TUI non partiva più dal salto a v0.21.7). Stesso schema dell'immagine
 # ufficiale: `scripts/build/tui.mjs --out`, poi HERMES_TUI_DIR punta lì (ENV
 # sotto e /usr/local/bin/hermes).
+#
+# Dalla 0.8.6 i node_modules si cancellano nello STESSO RUN, a build finito
+# (in un RUN separato resterebbero nel layer di sopra): ~440 MB su ~2 GB.
+# A runtime non servono: la TUI compilata importa solo moduli interni di Node
+# e il frontend è già impacchettato in web_dist. Vale SOLO perché la
+# dashboard parte con `--skip-build` (s6-rc.d/dashboard/run): senza, Hermes
+# richiama node-deps.mjs e si torna al ciclo di riavvii del 2026-10-12.
+# Verificato il 2026-10-27 su v0.22.5: dashboard, terminale (/api/pty) e chat
+# (/api/ws) identici con e senza node_modules. Da riverificare a ogni salto.
 # hadolint ignore=DL3016
 RUN set -eux; \
     npm install --workspace web --workspace ui-tui --include-workspace-root \
@@ -289,7 +298,8 @@ RUN set -eux; \
     grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js; \
     test -d ui-tui/node_modules; \
     node scripts/build/tui.mjs --source /opt/hermes-agent --out /opt/hermes-tui; \
-    test -f /opt/hermes-tui/dist/entry.js
+    test -f /opt/hermes-tui/dist/entry.js; \
+    rm -rf node_modules web/node_modules ui-tui/node_modules apps/*/node_modules
 
 # rootfs porta anche i plugin dell'App (/opt/hermes-app-plugins, oggi solo
 # image-render): codice nostro, collegato nei profili da render_config.py e

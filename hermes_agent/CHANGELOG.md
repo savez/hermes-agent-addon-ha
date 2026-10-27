@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.6
+
+**Immagine più leggera di ~440 MB: niente `node_modules`.** Servivano solo a
+compilare il frontend della dashboard e la TUI. La TUI compilata
+(`/opt/hermes-tui`) importa solo moduli interni di Node e il frontend è già
+impacchettato in `web_dist`, quindi il `Dockerfile` li cancella nello stesso
+`RUN` del build. `/opt/hermes-agent` passa da 1,3 GB a 863 MB, il layer di npm
+da 528 a 104 MB. Il build sul Pi scrive meno sulla SD, e il backup automatico
+prima di un aggiornamento esporta un'immagine più piccola.
+
+- Vale solo perché la dashboard parte con `--skip-build`: senza, Hermes
+  ricontrolla le dipendenze dei workspace e si torna al ciclo di riavvii del
+  2026-10-12. È scritto nel `Dockerfile`, nello script del servizio e nella
+  checklist di CLAUDE.md, da riverificare a ogni salto di versione.
+- Verificato nell'immagine arm64 costruita in locale, con e senza
+  `node_modules`, con risultati identici: la dashboard risponde 200, il
+  terminale (`/api/pty`) mostra la TUI, la chat (`/api/ws`) invia
+  `gateway.ready`, `hermes --tui` in un terminale vero parte
+  nell'interfaccia interattiva, nessun "stale or missing" né "Cannot find
+  module". Prova di Ingress attraverso nginx ripetuta; i 51 test passano.
+  **Non verificato:** sul Pi.
+
 ## 0.8.5
 
 **Hermes Agent v0.22.5** (da v0.22.2, commit `bf0203a`, 3291 commit a monte).

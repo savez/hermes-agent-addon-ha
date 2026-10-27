@@ -135,8 +135,10 @@ Da fare tutto insieme, in una nuova versione dell'App:
    (controlli su Host e Origin). Più le note di rilascio e
    `LEFT_CORE` in `hermes_cli/left_core_migration.py`, cercando funzioni
    uscite dal core.
-5. Build arm64 in locale, poi verifica sul dispositivo con
-   `docs/CHECKLIST-PI.md`.
+5. Build arm64 in locale. Nell'immagine non ci sono `node_modules` (dalla
+   0.8.6): controlla che dashboard (`--skip-build`), terminale, chat e
+   `hermes --tui` partano senza "stale or missing" o "Cannot find module".
+6. Verifica sul dispositivo con `docs/CHECKLIST-PI.md`.
 
 ## Convenzioni
 
