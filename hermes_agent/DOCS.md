@@ -25,7 +25,7 @@ dipendenze a runtime senza passare dal controllo che blocca gli
 "Modello di sicurezza" sotto), non configurabili da questa App.
 
 Ogni versione dell'App installa **una versione fissa di `hermes-agent`**
-(dalla 0.8.5: v0.22.5), verificata al build sul suo commit. Il pulsante
+(dalla 0.9.0: v0.23.1), verificata al build sul suo commit. Il pulsante
 "Update" della dashboard è disattivato: Hermes si aggiorna aggiornando
 l'App (vedi "Aggiornare" sotto).
 

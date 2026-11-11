@@ -40,8 +40,8 @@ SHELL ["/bin/bash", "-c"]
 # HA_PLUGIN_SHA (sotto) e si ricontrolla PYTHON_VERSION — checklist in
 # CLAUDE.md.
 ARG HERMES_REPO=https://github.com/NousResearch/hermes-agent.git
-ARG HERMES_REF=v0.22.5
-ARG HERMES_COMMIT=bf0203a794a07aac3ff764972ab9087baa4e4f4e
+ARG HERMES_REF=v0.23.1
+ARG HERMES_COMMIT=3b421578588243f920886e6fe79a6faa87ea026e
 # Extra di hermes-agent installati in fase di build. I provider non elencati
 # qui non potranno essere installati a runtime (lazy install disattivato).
 # OpenAI / OpenRouter / endpoint compatibili OpenAI sono già nel core.
@@ -60,8 +60,8 @@ ARG HERMES_EXTRAS="--extra all --extra anthropic --extra messaging"
 # 3.12 il build muore con "The current Python platform is not compatible with
 # the lockfile's supported environments" (incidente del 2026-10-12). Il lock
 # della v0.22.2 ha gli stessi marker (verificato il 2026-10-21), e così quello
-# della v0.22.5 (verificato il 2026-10-27). Da
-# ricontrollare a ogni salto di versione di hermes-agent.
+# della v0.22.5 (verificato il 2026-10-27) e della v0.23.1 (verificato il
+# 2026-11-11). Da ricontrollare a ogni salto di versione di hermes-agent.
 ARG PYTHON_VERSION=3.14
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -104,7 +104,7 @@ RUN set -eu; \
 # va riallineato a ogni salto di versione di Hermes. Unica dipendenza aiohttp,
 # già nel venv (controllo di import sotto).
 ARG HA_PLUGIN_REPO=https://github.com/NousResearch/hermes-official-plugins.git
-ARG HA_PLUGIN_SHA=4d492b1dc5326af3e38bb2cf3e4b9ad6d65f0072
+ARG HA_PLUGIN_SHA=e7a218f26db88426ab3e7376f0e000b6e356f5e7
 RUN set -eu; \
     git clone --filter=blob:none --no-checkout "${HA_PLUGIN_REPO}" /tmp/official-plugins; \
     git -C /tmp/official-plugins checkout -q "${HA_PLUGIN_SHA}" -- homeassistant; \
@@ -231,14 +231,15 @@ COPY --from=builder /opt/hermes-ha-plugins /opt/hermes-ha-plugins
 COPY --from=builder /usr/local/bin/himalaya /usr/local/bin/himalaya
 
 # Build del frontend della dashboard (Vite/TypeScript in hermes-agent/web).
-# `--workspace web` (non un `npm install` alla radice, come il Dockerfile
-# ufficiale di hermes-agent fa per TUTTI i workspace): risolve comunque la
-# dipendenza locale apps/shared (npm segue i workspace link a prescindere
-# dal filtro), ma evita di installare apps/desktop e la sua node-pty, un
-# addon nativo che richiede un python3 di sistema per compilare (non
-# presente in questa immagine, e comunque inutile: il dashboard usa
-# ptyprocess Python lato backend, xterm.js lato frontend — niente PTY di
-# Node qui). node_modules si cancella a fine build (vedi sotto).
+# Dalla v0.23.0 il monorepo usa pnpm, non più npm: `package.json` non ha più
+# `workspaces`, il `preinstall` esce con errore se l'agente non è esattamente
+# il pnpm di `pm/lock.json` e `engines.npm` rifiuta npm. L'installazione passa
+# da `scripts/build/node-deps.mjs --workspace ui-tui --workspace web`, come
+# nel Dockerfile ufficiale: installa solo i due workspace che servono ed evita
+# apps/desktop e la sua node-pty, un addon nativo che richiede un python3 di
+# sistema per compilare (non presente in questa immagine, e comunque inutile:
+# il dashboard usa ptyprocess Python lato backend, xterm.js lato frontend —
+# niente PTY di Node qui). node_modules si cancella a fine build (vedi sotto).
 WORKDIR /opt/hermes-agent
 
 # Fix per le pagine che restavano vuote sotto Ingress (System/Chat — vedi
@@ -259,8 +260,13 @@ RUN set -eux; \
     grep -q 'HERMES_BASE_PATH' web/vite.config.ts; \
     rm /tmp/vite-base-path-runtime.snippet
 
-# Non è un `npm install <pkg>` senza versione: installa l'intero
-# workspace dal `package-lock.json` committato (versioni già pinnate lì).
+# pnpm è lo strumento di build del frontend, non serve a runtime: si scarica
+# nello stesso RUN e si cancella a fine build. Versione e checksum sono quelli
+# che `pm/lock.json` di HERMES_REF fissa per linux-arm64 e linux-x64 (12.15.0
+# alla v0.23.1): `node-deps.mjs` rifiuta qualunque altro pnpm. Il tarball
+# `@pnpm/exe` contiene l'eseguibile nativo e il suo package.json, da cui
+# `node-deps.mjs` legge la versione. Store e cache stanno in /tmp/pnpm-xdg,
+# cancellato nello stesso RUN, perché non finiscano nel layer.
 #
 # Servono DUE workspace, non solo `web`. Dalla v0.21.7 la dashboard, prima di
 # partire, chiama `scripts/build/node-deps.mjs --workspace ui-tui --workspace
@@ -281,25 +287,45 @@ RUN set -eux; \
 # ufficiale: `scripts/build/tui.mjs --out`, poi HERMES_TUI_DIR punta lì (ENV
 # sotto e /usr/local/bin/hermes).
 #
+# Il frontend si compila con `scripts/build/web.mjs` senza argomenti, che
+# scrive in `hermes_cli/web_dist` (dove `--skip-build` lo cerca) con le icone
+# già nell'albero (`web/public`).
+#
 # Dalla 0.8.6 i node_modules si cancellano nello STESSO RUN, a build finito
 # (in un RUN separato resterebbero nel layer di sopra): ~440 MB su ~2 GB.
 # A runtime non servono: la TUI compilata importa solo moduli interni di Node
 # e il frontend è già impacchettato in web_dist. Vale SOLO perché la
 # dashboard parte con `--skip-build` (s6-rc.d/dashboard/run): senza, Hermes
 # richiama node-deps.mjs e si torna al ciclo di riavvii del 2026-10-12.
-# Verificato il 2026-10-27 su v0.22.5: dashboard, terminale (/api/pty) e chat
-# (/api/ws) identici con e senza node_modules. Da riverificare a ogni salto.
-# hadolint ignore=DL3016
+# Con pnpm la cancellazione include anche lo store (/tmp/pnpm-xdg).
+ARG PNPM_VERSION=12.15.0
+ARG PNPM_SHA256_AARCH64=8117d65f28e627e949d5fc65d63342266326826a56fa374317bf13fe1166a50e
+ARG PNPM_SHA256_X86_64=402f7045b1e0587acb1542f18d38afbccb6babf3c7451394e6fb3d9f0160c6ca
 RUN set -eux; \
-    npm install --workspace web --workspace ui-tui --include-workspace-root \
-        --prefer-offline --no-audit --fetch-retries=5; \
-    npm run build --prefix web; \
+    arch="$(uname -m)"; \
+    case "${arch}" in \
+        aarch64) want="${PNPM_SHA256_AARCH64}"; pkg=linux-arm64 ;; \
+        x86_64)  want="${PNPM_SHA256_X86_64}";  pkg=linux-x64 ;; \
+        *) echo "pnpm: architettura ${arch} non supportata" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/pnpm.tgz \
+        "https://registry.npmjs.org/@pnpm/exe.${pkg}/-/exe.${pkg}-${PNPM_VERSION}.tgz"; \
+    echo "${want}  /tmp/pnpm.tgz" | sha256sum -c -; \
+    mkdir -p /opt/pnpm; \
+    tar -xzf /tmp/pnpm.tgz -C /opt/pnpm --strip-components=1 package/pnpm package/package.json; \
+    rm /tmp/pnpm.tgz; \
+    ln -s /opt/pnpm/pnpm /usr/local/bin/pnpm; \
+    pnpm --version; \
+    export XDG_DATA_HOME=/tmp/pnpm-xdg/data XDG_CACHE_HOME=/tmp/pnpm-xdg/cache XDG_STATE_HOME=/tmp/pnpm-xdg/state; \
+    node scripts/build/node-deps.mjs --source /opt/hermes-agent --workspace ui-tui --workspace web; \
+    test -d ui-tui/node_modules; \
+    node scripts/build/web.mjs; \
     test -f hermes_cli/web_dist/index.html; \
     grep -q 'HERMES_BASE_PATH' hermes_cli/web_dist/assets/index-*.js; \
-    test -d ui-tui/node_modules; \
     node scripts/build/tui.mjs --source /opt/hermes-agent --out /opt/hermes-tui; \
     test -f /opt/hermes-tui/dist/entry.js; \
-    rm -rf node_modules web/node_modules ui-tui/node_modules apps/*/node_modules
+    rm -rf node_modules web/node_modules ui-tui/node_modules ui-tui/packages/*/node_modules \
+        apps/*/node_modules /tmp/pnpm-xdg /opt/pnpm /usr/local/bin/pnpm
 
 # rootfs porta anche i plugin dell'App (/opt/hermes-app-plugins, oggi solo
 # image-render): codice nostro, collegato nei profili da render_config.py e

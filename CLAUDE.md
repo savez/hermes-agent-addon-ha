@@ -127,6 +127,10 @@ Da fare tutto insieme, in una nuova versione dell'App:
    di uv (`FROM ghcr.io/astral-sh/uv:...`) contro quella che `pm/lock.json`
    fissa al nuovo tag: un `uv.lock` scritto da un uv più recente può non
    essere letto da uno vecchio (dalla v0.22.5 il lock è `revision = 5`).
+   Dalla v0.23.0 il frontend si installa con pnpm, non npm: `PNPM_VERSION` e
+   i due `PNPM_SHA256_*` del `Dockerfile` vanno riallineati al blocco `pnpm` di
+   `pm/lock.json` (artefatto `@pnpm/exe` per linux-arm64 e linux-x64), perché
+   `node-deps.mjs` rifiuta qualunque altro pnpm.
 4. Diff fra il vecchio e il nuovo tag dei punti di contatto: `web/vite.config.ts`
    (patch di Ingress), workspace e `engines` di `package.json`, extra in
    `pyproject.toml`, `scripts/build/node-deps.mjs`, `pm/lock.json`,
