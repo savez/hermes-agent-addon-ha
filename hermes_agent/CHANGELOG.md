@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.9.0
+
+**Hermes Agent v0.23.1** (da v0.22.5, commit `3b42157`, 7483 commit a monte,
+con la v0.23.0 in mezzo). Plugin ufficiale `homeassistant` riallineato allo
+SHA del catalogo di questo tag (`e7a218f`, sempre versione 2.0.1).
+
+**Il frontend ora si costruisce con pnpm.** Dalla v0.23.0 il monorepo ha
+lasciato npm: `package.json` non ha più `workspaces`, il `preinstall` esce con
+errore se non c'è esattamente il pnpm di `pm/lock.json` e `engines.npm`
+rifiuta npm. Il vecchio `npm install --workspace web --workspace ui-tui` del
+`Dockerfile` si sarebbe fermato subito. Ora il `Dockerfile` scarica
+`@pnpm/exe` 12.15.0 con sha256 fissato (arm64 e x64, come per himalaya) e
+passa da `scripts/build/node-deps.mjs`, `web.mjs` e `tui.mjs` ufficiali. pnpm,
+il suo store e i `node_modules` si cancellano nello stesso `RUN`: l'immagine
+resta senza `node_modules`, `/opt/hermes-agent` è 904 MB (863 MB alla 0.8.6).
+
+- Controllati a monte, invariati: uv 0.13.5, `uv.lock` `revision = 5` con
+  marker `>=3.14` (come `PYTHON_VERSION`), ancora di `web/vite.config.ts` per
+  la patch di Ingress, extra `all`, `anthropic`, `messaging`. Nuovi extra
+  (`documents`, `documents-pdf`, `keychain`) non aggiunti: prima non c'erano.
+- Nuova guardia a monte sull'Origin dei WebSocket (`web_server_boundary.py`):
+  rifiuta un Origin loopback il cui host:porta differisce dall'header `Host`.
+  Compatibile con nginx, che riscrive entrambi a `127.0.0.1:8788`.
+- Verificato nell'immagine arm64 costruita in locale: `hermes --version` dà
+  v0.23.1 sul commit atteso, il build verifica il commit, pnpm e il patch di
+  Vite; la dashboard parte con `--skip-build` e risponde 200; `/api/pty` e
+  `/api/ws` si aprono con Host e Origin come li scrive nginx (la chat manda
+  `gateway.ready`) e rispondono 403 con un Origin estraneo; `hermes --tui` in
+  un terminale entra nell'interfaccia; nessun "stale or missing" né "Cannot
+  find module"; `/opt` resta di root. Test del progetto: 21 passati, 6
+  saltati (i live, che richiedono un venv di Hermes).
+- **Non verificato:** sul Pi, né l'amd64 (sha256 di pnpm per x64 copiato da
+  `pm/lock.json`, build non provata); Ingress attraverso nginx e s6 non
+  ripetuto (i WebSocket sono provati direttamente sulla dashboard); la parte
+  di `left_core_migration.py` (808 righe cambiate) letta solo a campione.
+  SQLite del Python gestito: 3.53.1, mentre l'immagine ufficiale ne compila
+  una 3.53.4 per FTS5 trigram: nessun errore al build, ma la ricerca nelle
+  sessioni non è stata provata.
+
 ## 0.8.6
 
 **Immagine più leggera di ~440 MB: niente `node_modules`.** Servivano solo a
